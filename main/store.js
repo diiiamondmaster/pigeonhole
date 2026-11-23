@@ -1,0 +1,308 @@
+// Pigeonhole - persistent state store.
+// Single JSON document at userData/pigeonhole-store.json, atomic + debounced writes.
+// Secrets (email passwords, shared password) are encrypted at rest with
+// Electron safeStorage (DPAPI on Windows, Keychain on macOS, libsecret on Linux).
+// When OS-level encryption is unavailable the values fall back to plaintext and
+// settings.vaultEncrypted is set to false so the UI can surface a warning.
+const { app, safeStorage } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const STATE_VERSION = 1;
+const FILE = () => path.join(app.getPath('userData'), 'pigeonhole-store.json');
+
+const HUES = [36, 12, 350, 320, 262, 220, 190, 160, 90, 45]; // amber, coral, red, magenta, violet, blue, cyan, green, lime, gold
+
+const DEFAULT_SETTINGS = {
+  searchEngine: 'google',
+  identityMode: 'numbered',     // numbered | human | words | custom
+  identityBase: '',
+  identityPadding: 3,
+  identityStart: 1,
+  pwLength: 16,
+  pwSymbols: true,
+  sharedPassword: null,         // secret
+  autoFillOnLoad: true,
+  autoDetectSuccess: true,
+  vaultEncrypted: false,
+  downloadsDir: ''
+};
+
+function defaultState() {
+  return {
+    version: STATE_VERSION,
+    settings: { ...DEFAULT_SETTINGS },
+    ui: { sidebarCollapsed: false, activeWsId: null },
+    nextWsNum: 1,
+    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,createdAt}
+    tabs: {},                   // wsId -> [{id,url,title,active,favicon}]
+    history: {}                 // wsId -> [{url,title,at}]
+  };
+}
+
+class Store {
+  constructor() {
+    this.state = defaultState();
+    this._saveTimer = null;
+    this.encryptionAvailable = false;
+  }
+
+  load() {
+    try {
+      if (fs.existsSync(FILE())) {
+        const raw = JSON.parse(fs.readFileSync(FILE(), 'utf8'));
+        if (raw && typeof raw === 'object' && Array.isArray(raw.workspaces)) {
+          this.state = { ...defaultState(), ...raw, settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) } };
+          if (!this.state.ui) this.state.ui = defaultState().ui;
+          if (!this.state.tabs) this.state.tabs = {};
+          if (!this.state.history) this.state.history = {};
+        }
+      }
+    } catch (e) {
+      console.error('[store] failed to load state, starting fresh:', e.message);
+      this.state = defaultState();
+    }
+    try {
+      this.encryptionAvailable = safeStorage.isEncryptionAvailable();
+    } catch { this.encryptionAvailable = false; }
+    this.state.settings.vaultEncrypted = this.encryptionAvailable;
+    this._migrate();
+  }
+
+  _migrate() {
+    // future migrations keyed on this.state.version
+    this.state.version = STATE_VERSION;
+  }
+
+  // ---------- secrets ----------
+  encryptSecret(plain) {
+    if (plain == null || plain === '') return null;
+    if (!this.encryptionAvailable) return { v: String(plain) };
+    try {
+      return { v: safeStorage.encryptString(String(plain)).toString('base64'), e: 1 };
+    } catch {
+      return { v: String(plain) };
+    }
+  }
+  decryptSecret(box) {
+    if (!box || typeof box !== 'object') return null;
+    try {
+      if (box.e && typeof box.v === 'string') {
+        if (!this.encryptionAvailable) return null;
+        return safeStorage.decryptString(Buffer.from(box.v, 'base64'));
+      }
+      return typeof box.v === 'string' ? box.v : null;
+    } catch { return null; }
+  }
+
+  // ---------- persistence ----------
+  save() {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this._flush();
+    }, 350);
+  }
+  _flush() {
+    try {
+      const file = FILE();
+      const tmp = file + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(this.state, null, 1), 'utf8');
+      fs.renameSync(tmp, file);
+    } catch (e) {
+      console.error('[store] save failed:', e.message);
+    }
+  }
+  flushNow() { if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; } this._flush(); }
+
+  // ---------- workspaces ----------
+  createWorkspace({ name = '', hue = null } = {}) {
+    const id = 'ws-' + crypto.randomBytes(6).toString('hex');
+    const num = this.state.nextWsNum++;
+    const ws = {
+      id, num,
+      name: name || `Workspace ${num}`,
+      hue: hue != null ? hue : HUES[(num - 1) % HUES.length],
+      identity: null,   // {email,password(secret),displayName,provider,createdAt}
+      accounts: [],      // [{origin,email,password(secret),title,createdAt,updatedAt}]
+      quickLinks: [],
+      createdAt: Date.now()
+    };
+    this.state.workspaces.push(ws);
+    this.state.tabs[id] = [];
+    this.state.history[id] = this.state.history[id] || [];
+    this.save();
+    return ws;
+  }
+
+  getWorkspace(id) { return this.state.workspaces.find(w => w.id === id) || null; }
+
+  deleteWorkspace(id) {
+    const i = this.state.workspaces.findIndex(w => w.id === id);
+    if (i === -1) return false;
+    this.state.workspaces.splice(i, 1);
+    delete this.state.tabs[id];
+    delete this.state.history[id];
+    if (this.state.ui.activeWsId === id) {
+      this.state.ui.activeWsId = this.state.workspaces[0]?.id || null;
+    }
+    this.save();
+    return true;
+  }
+
+  // ---------- vault ----------
+  setIdentity(wsId, { email, password, displayName = '', provider = '' }) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return null;
+    ws.identity = {
+      email: String(email || '').trim(),
+      password: this.encryptSecret(password),
+      displayName: String(displayName || '').trim(),
+      provider: String(provider || ''),
+      createdAt: ws.identity?.createdAt || Date.now()
+    };
+    if (!ws.name || /^Workspace \d+$/.test(ws.name)) {
+      ws.name = String(email || `Workspace ${ws.num}`).split('@')[0];
+    }
+    this.save();
+    return this.sanitizeIdentity(ws.identity);
+  }
+
+  updateIdentity(wsId, patch) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws || !ws.identity) return null;
+    if (typeof patch.email === 'string' && patch.email.trim()) {
+      ws.identity.email = patch.email.trim();
+      if (/^Workspace \d+$/.test(ws.name)) ws.name = patch.email.split('@')[0];
+    }
+    if (typeof patch.displayName === 'string') ws.identity.displayName = patch.displayName.trim();
+    if (typeof patch.provider === 'string') ws.identity.provider = patch.provider;
+    if (typeof patch.password === 'string' && patch.password) ws.identity.password = this.encryptSecret(patch.password);
+    this.save();
+    return this.sanitizeIdentity(ws.identity);
+  }
+
+  sanitizeIdentity(identity) {
+    if (!identity) return null;
+    return {
+      email: identity.email,
+      displayName: identity.displayName,
+      provider: identity.provider,
+      createdAt: identity.createdAt,
+      hasPassword: !!identity.password
+    };
+  }
+
+  upsertAccount(wsId, { origin, email, password, title = '' }) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return null;
+    const o = String(origin || '').replace(/\/+$/, '');
+    const existing = ws.accounts.find(a => a.origin === o && a.email === email);
+    if (existing) {
+      existing.password = this.encryptSecret(password);
+      existing.title = title || existing.title;
+      existing.updatedAt = Date.now();
+    } else {
+      ws.accounts.push({
+        origin: o, email: String(email || ''), password: this.encryptSecret(password),
+        title: String(title || ''), createdAt: Date.now(), updatedAt: Date.now()
+      });
+    }
+    this.save();
+    return true;
+  }
+
+  removeAccount(wsId, origin, email) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return false;
+    const o = String(origin || '').replace(/\/+$/, '');
+    const i = ws.accounts.findIndex(a => a.origin === o && a.email === email);
+    if (i === -1) return false;
+    ws.accounts.splice(i, 1);
+    this.save();
+    return true;
+  }
+
+  listAccounts(wsId) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return [];
+    return ws.accounts.map(a => ({
+      origin: a.origin, email: a.email, title: a.title, createdAt: a.createdAt, updatedAt: a.updatedAt
+    }));
+  }
+
+  // ---------- tabs & history ----------
+  saveTabs(wsId, tabs) {
+    if (!this.getWorkspace(wsId)) return;
+    const clean = (Array.isArray(tabs) ? tabs : []).filter(t => t && typeof t.url === 'string').map(t => ({
+      id: String(t.id), url: t.url, title: String(t.title || ''), active: !!t.active,
+      favicon: typeof t.favicon === 'string' ? t.favicon.slice(0, 200000) : null
+    }));
+    this.state.tabs[wsId] = clean;
+    this.save();
+  }
+  getTabs(wsId) { return this.state.tabs[wsId] || []; }
+
+  addHistory(wsId, { url, title }) {
+    if (!this.getWorkspace(wsId)) return;
+    if (!/^https?:/i.test(url || '')) return;
+    const h = this.state.history[wsId] = this.state.history[wsId] || [];
+    const last = h[h.length - 1];
+    if (last && last.url === url) { last.title = title || last.title; return; }
+    h.push({ url, title: String(title || ''), at: Date.now() });
+    if (h.length > 400) h.splice(0, h.length - 400);
+    this.save();
+  }
+  getHistory(wsId) { return (this.state.history[wsId] || []).slice(-40).reverse(); }
+
+  // ---------- settings ----------
+  setSettings(patch) {
+    const allowed = ['searchEngine', 'identityMode', 'identityBase', 'identityPadding', 'identityStart',
+      'pwLength', 'pwSymbols', 'autoFillOnLoad', 'autoDetectSuccess', 'downloadsDir'];
+    for (const k of allowed) {
+      if (k in patch) this.state.settings[k] = patch[k];
+    }
+    this.save();
+    return this.getSettings();
+  }
+  getSettings() {
+    const s = this.state.settings;
+    return {
+      searchEngine: s.searchEngine, identityMode: s.identityMode, identityBase: s.identityBase,
+      identityPadding: s.identityPadding, identityStart: s.identityStart, pwLength: s.pwLength,
+      pwSymbols: s.pwSymbols, autoFillOnLoad: s.autoFillOnLoad, autoDetectSuccess: s.autoDetectSuccess,
+      vaultEncrypted: s.vaultEncrypted, downloadsDir: s.downloadsDir, hasSharedPassword: !!s.sharedPassword
+    };
+  }
+  setSharedPassword(pw) {
+    this.state.settings.sharedPassword = pw ? this.encryptSecret(pw) : null;
+    this.save();
+  }
+  getSharedPassword() { return this.decryptSecret(this.state.settings.sharedPassword); }
+
+  // ---------- ui ----------
+  setUi(patch) {
+    Object.assign(this.state.ui, patch || {});
+    this.save();
+  }
+
+  // snapshot for renderer (no secrets)
+  snapshot() {
+    return {
+      settings: this.getSettings(),
+      ui: { ...this.state.ui },
+      workspaces: this.state.workspaces.map(w => ({
+        id: w.id, num: w.num, name: w.name, hue: w.hue,
+        identity: this.sanitizeIdentity(w.identity),
+        accountCount: w.accounts.length,
+        quickLinks: w.quickLinks || [],
+        createdAt: w.createdAt
+      })),
+      tabs: Object.fromEntries(Object.entries(this.state.tabs).map(([k, v]) => [k, v])),
+      history: Object.fromEntries(Object.entries(this.state.history).map(([k, v]) => [k, v.slice(-40).reverse()]))
+    };
+  }
+}
+
+module.exports = { store: new Store(), HUES };

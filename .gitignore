@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+build/tmp/
+
+# Runtime artifacts
+*.log
+pigeonhole-store.json
+dev-shots/
+
+# Dev spikes & sandbox tooling (never ship maintainer files)
+spike-*.js
+spike.html
+GITHUB-REPO-INSTRUCTIONS.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
