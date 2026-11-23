@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none';">
+<title>Pigeonhole</title>
+<link rel="stylesheet" href="chrome.css">
+</head>
+<body>
+<div id="app">
+  <!-- ============ workspace sidebar ============ -->
+  <aside id="sidebar" class="sidebar" aria-label="Workspaces">
+    <div class="sb-head">
+      <button id="logoBtn" class="logo-btn" title="About Pigeonhole" aria-label="About Pigeonhole"></button>
+    </div>
+    <div id="wsTiles" class="ws-tiles" role="listbox" aria-label="Workspace list"></div>
+    <div class="sb-foot">
+      <button id="newWsBtn" class="ws-tile add-tile" title="New workspace (Ctrl+Shift+N)" aria-label="New workspace"></button>
+      <button id="collapseBtn" class="sb-btn" title="Hide sidebar (Ctrl+B)" aria-label="Hide sidebar"></button>
+    </div>
+  </aside>
+
+  <!-- slim rail shown when the sidebar is collapsed -->
+  <div id="sbRail" class="sb-rail hidden">
+    <button id="expandBtn" class="sb-btn" title="Show workspaces (Ctrl+B)" aria-label="Show workspaces"></button>
+  </div>
+
+  <!-- ============ main column ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div id="wsChip" class="ws-chip"></div>
+      <div class="topbar-actions">
+        <button id="vaultBtn" class="icon-btn" title="Vault (saved identities and logins)" aria-label="Vault"></button>
+        <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings"></button>
+      </div>
+    </header>
+
+    <div id="tabstrip" class="tabstrip" role="tablist"></div>
+
+    <div class="toolbar">
+      <button id="backBtn" class="nav-btn" title="Back (Alt+Left)" aria-label="Back"></button>
+      <button id="fwdBtn" class="nav-btn" title="Forward (Alt+Right)" aria-label="Forward"></button>
+      <button id="reloadBtn" class="nav-btn" title="Reload (Ctrl+R)" aria-label="Reload"></button>
+      <button id="homeBtn" class="nav-btn" title="New tab page (Alt+Home)" aria-label="New tab page"></button>
+
+      <div class="addr-wrap">
+        <span id="urlIcon" class="url-icon"></span>
+        <input id="addr" class="addr" type="text" spellcheck="false" autocomplete="off"
+               placeholder="Search or enter address" aria-label="Address and search bar">
+        <div id="addrProgress" class="addr-progress"></div>
+        <div id="suggest" class="suggest hidden" role="listbox"></div>
+      </div>
+
+      <button id="fillBtn" class="tool-btn fill-btn hidden" title="Fill this page with the workspace identity" aria-label="Fill identity"></button>
+      <div class="toolbar-progress" id="toolbarProgress"></div>
+    </div>
+
+    <div id="offerBar" class="offer-bar hidden"></div>
+    <div id="findBar" class="find-bar hidden">
+      <button id="findPrev" class="icon-btn sm" title="Previous match (Shift+Enter)"></button>
+      <button id="findNext" class="icon-btn sm" title="Next match (Enter)"></button>
+      <input id="findInput" type="text" placeholder="Find in page" aria-label="Find in page">
+      <span id="findCount" class="find-count"></span>
+      <button id="findClose" class="icon-btn sm" title="Close (Esc)"></button>
+    </div>
+
+    <div class="content" id="content">
+      <div id="wsViews" class="ws-views"></div>
+      <aside id="wizardPanel" class="dock-panel hidden" aria-label="Email setup wizard"></aside>
+      <aside id="vaultPanel" class="dock-panel hidden" aria-label="Vault"></aside>
+    </div>
+
+    <footer class="statusbar">
+      <div id="statusLeft" class="status-left"></div>
+      <div id="statusRight" class="status-right"></div>
+    </footer>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="menuRoot"></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
