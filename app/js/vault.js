@@ -46,6 +46,7 @@ export async function openVault(wsId) {
         el('button', { class: 'icon-btn sm', html: icon('key', 13), title: 'Copy password', onclick: async () => { const pw = await PH().vault.secret(w.id, 'account', { origin: a.origin, email: a.email }); await copyText(pw || ''); toastMini('Password copied'); } }),
         el('button', { class: 'icon-btn sm', html: icon('trash', 13), title: 'Remove', onclick: async () => { await PH().vault.removeAccount(w.id, a.origin, a.email); openVault(w.id); } })));
   }) : [el('div', { class: 'empty-note', text: 'No site logins saved yet. After you sign in to a site, Pigeonhole offers to save it here.' })];
+  // (empty note is centered by .empty-note)
 
   // ---- manual add ----
   const fOrigin = el('input', { class: 'input', type: 'url', placeholder: 'https://site.com' });
@@ -69,7 +70,7 @@ export async function openVault(wsId) {
     el('div', { class: 'panel-head' },
       el('div', { class: 'grow' },
         el('h2', { text: 'Vault' }),
-        el('div', { class: 'sub', text: `Workspace ${w.num} · ${w.name}` })),
+        el('div', { class: 'sub', text: `Workspace ${w.num}` })),
       el('button', { class: 'icon-btn sm', html: icon('external', 13), title: 'Export this vault (plain text)', onclick: async () => { const r = await PH().vault.exportVault(w.id); if (r?.ok) toastMini('Vault exported'); } }),
       el('button', { class: 'icon-btn sm', html: icon('close', 15), title: 'Close', onclick: closeVault })),
     el('div', { class: 'panel-body' },

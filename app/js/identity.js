@@ -94,7 +94,7 @@ function showOffer(origin, kind, html, actionLabel, identity) {
   bar.replaceChildren(
     el('span', { class: 'ob-ico', html: icon(kind === 'login' ? 'key' : 'wand', 16) }),
     el('span', { class: 'ob-text', html }),
-    identity && kind === 'login' ? el('button', { class: 'btn btn-sm', text: 'Save this login after signing in', title: 'After you sign in, Pigeonhole will offer to store these site credentials in the workspace vault', onclick: () => hideOffer() }) : null,
+    identity && kind === 'login' ? el('button', { class: 'btn btn-sm', text: 'Save login after signing in', title: 'After you sign in, Pigeonhole will offer to store these site credentials in the workspace vault', onclick: () => hideOffer() }) : null,
     actionLabel ? el('button', { class: 'btn btn-sm btn-primary', text: actionLabel, onclick: () => fillActivePage() }) : null,
     el('button', { class: 'btn btn-sm btn-ghost', text: 'Ignore', onclick: () => { dismissed.add(origin + '|' + kind); hideOffer(); } })
   );

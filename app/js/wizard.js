@@ -398,6 +398,7 @@ function stepCreate(s) {
   ];
 
   return el('div', {},
+    el('div', { class: 'hint', style: { marginBottom: '10px' }, text: `Step ${s.step === 'create' ? 4 : 5} - Pigeonhole watches this tab and fills the form; the CAPTCHA and the final click are yours.` }),
     el('ul', { class: 'checklist' }, items),
     el('div', { class: 'row', style: { marginTop: '12px', flexWrap: 'wrap', gap: '8px' } },
       el('button', { class: 'btn btn-sm', html: icon('wand', 13) + ' Fill again', onclick: () => runFill(s, true) }),
@@ -405,8 +406,8 @@ function stepCreate(s) {
       el('span', { class: 'grow' }),
       el('button', { class: 'btn btn-ghost btn-sm', text: 'Change identity', onclick: () => { s.step = 'identity'; renderPanel(); } })),
     el('div', { class: 'divider' }),
-    el('button', { class: 'btn btn-primary btn-block', html: icon('check', 14) + ' I have created the account', onclick: () => { s.created = true; s.step = 'confirm'; renderPanel(); } }),
-    el('p', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '9px', lineHeight: '1.5' }, text: 'Pigeonhole also notices when the signup finishes by itself and moves on. If the provider blocked the chosen address, go back, change the identity and try again.' })
+    el('p', { style: { fontSize: '11px', color: 'var(--text-faint)', margin: '0 0 14px', lineHeight: '1.55' }, text: 'Pigeonhole also notices when the signup finishes by itself and moves on. If the provider rejected the chosen address, go back, change the identity and try again.' }),
+    el('button', { class: 'btn btn-primary btn-block', style: { height: '38px' }, html: icon('check', 15) + ' I have created the account', onclick: () => { s.created = true; s.step = 'confirm'; renderPanel(); } })
   );
 }
 

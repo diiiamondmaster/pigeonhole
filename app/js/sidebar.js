@@ -23,8 +23,7 @@ export function renderSidebar() {
       onclick: () => { if (S.getActiveWsId() !== w.id) Tabs.switchWorkspace(w.id); },
       oncontextmenu: (e) => { e.preventDefault(); tileMenu(e, w); }
     },
-      el('span', { text: w.num }),
-      w.identity ? el('span', { class: 'tile-sub', html: icon('mail', 8) }) : null
+      el('span', { text: w.num })
     );
     tile.addEventListener('mouseenter', () => showTip(tile, w));
     tile.addEventListener('mouseleave', hideTip);
