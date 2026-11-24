@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.0.3 - 2026-11-25
+
+The update that updates itself. Pigeonhole now pulls new versions from GitHub
+Releases on its own and applies them without touching user data.
+
+- **Self-update.** On startup the app checks the GitHub Releases feed in the
+  background; a newer build is downloaded silently into the temp folder and
+  installs itself when you quit (or immediately via *Restart & update* -
+  tabs and workspaces come back exactly as they were). Manual checks: Settings
+  → About and Help → *Check for updates…*.
+- **Data safety by design.** Only the program folder is replaced; workspaces,
+  vault, tabs and settings live in the separate app-data folder and are
+  picked up untouched. Interrupted updates are noticed and re-downloaded on
+  the next launch.
+- The one background network call (api.github.com) is now disclosed in the
+  privacy notes; everything else stays local-first.
+- Updater E2E suite added (`scripts/test-updater.mjs`, 11 checks against a
+  mock GitHub API).
+
+## 1.0.2 - 2026-11-24
+
+The autofill and usability release.
+
+- **Autofill now actually works on real providers.** Plan-picker screens
+  (Tuta, Proton) no longer stall the engine; each step is filled as it
+  appears; attempts that filled nothing no longer burn the budget.
+- **Harder signup forms read correctly.** Shadow DOM and same-origin iframes
+  are scanned; aria-label-only username boxes, plain-text consent checkboxes
+  and set+repeat password pairs (Tuta's exact structure) are handled.
+- **Tuta's domain list corrected** to the live signup page (six domains,
+  `@tutamail.com` back on the menu) and the custom domain dropdown is now
+  operated automatically.
+- **Tab reordering:** drag tabs, or right-click for Move left / Move right;
+  order persists across restarts.
+- Offer-bar null button and stale-snapshot wizard no-ops fixed; E2E suite
+  rebuilt to 43 checks.
+
+## 1.0.1 - 2026-11-24
+
+- Fixed the new-workspace wizard getting stuck at the email provider step.
+- Fill-again always runs and reports what it did.
+
 ## 1.0.0 - 2026-11-24
 
 First public release.

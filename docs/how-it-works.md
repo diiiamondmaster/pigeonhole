@@ -44,6 +44,7 @@ point of view, two unrelated browsers on the same screen.
 | `autofill.js` | the form detection / fill engine (page-world scripts) |
 | `identity.js` | login/signup detection polling, offer bar, credential capture |
 | `vault.js`, `modals.js` | vault drawer, settings and workspace dialogs |
+| `updates.js` | toast/notification side of the self-updater |
 | `state.js` | snapshot of the main-process state + a small event bus |
 
 The renderer has **no Node access** (`contextIsolation` on, `nodeIntegration`
@@ -94,6 +95,31 @@ small polled action queue instead of any privileged bridge.
 - The renderer only receives secrets through the explicit
   `ph:vault-secret` channel (reveal/copy); the state snapshot it gets for
   rendering never contains them.
+
+## The self-updater
+
+`main/updater.js` owns the whole flow; the renderer (`app/js/updates.js`)
+only reacts to events and offers the two manual entry points.
+
+- **Check:** a `GET` to `/releases/latest` on the GitHub API (Electron's
+  `net` module, so the browser's proxy and certificate stack applies). The
+  tag is semver-compared against `app.getVersion()`; a matching
+  `Pigeonhole-x.y.z-win-x64.zip` release asset must exist.
+- **Download:** streamed to `%TEMP%` with progress events - never buffered
+  in memory. On completion a marker file
+  (`%APPDATA%/Pigeonhole/pending-update.json`) records the zip and version,
+  so a crash cannot lose the "an update is staged" fact. On the next boot the
+  marker is reconciled: applied versions are cleaned up, stale-but-valid ones
+  re-arm themselves.
+- **Apply on quit:** `before-quit` hands the staged zip to a detached
+  `cmd`/PowerShell helper that waits for the app's PID to exit, extracts the
+  zip over the program folder with `Expand-Archive -Force` (five retries for
+  antivirus locks), deletes the zip and - in the explicit *Restart & update*
+  mode - relaunches `Pigeonhole.exe`. It logs to
+  `%TEMP%\pigeonhole-update.log`.
+- User data is untouched by construction: the program folder and
+  `%APPDATA%/Pigeonhole` are disjoint, so an update is a pure file swap of
+  the executable tree.
 
 ## Security posture
 

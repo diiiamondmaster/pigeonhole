@@ -34,6 +34,10 @@ adds on top:
   the operating system's credential store when available.
 - **Local-first.** No account, no telemetry, no analytics. All state lives on
   your machine. See [docs/privacy-security.md](docs/privacy-security.md).
+- **Self-updating.** On its own, the app checks GitHub Releases in the
+  background, downloads the new build and applies it when you quit - your
+  workspaces, vault and settings are never touched. A manual *Check for
+  updates* lives in Settings → About and in the Help menu.
 
 | Browsing with several workspaces | The email setup wizard |
 | --- | --- |
@@ -86,6 +90,18 @@ workspace wipes its profile from disk. The technical walk-through (sessions,
 the internal `pigeonhole://` pages, the IPC surface, the security model) is in
 [docs/how-it-works.md](docs/how-it-works.md).
 
+## How updates work
+
+Pigeonhole updates itself, and the update never risks your data. On startup
+(and from Settings → About, or Help → *Check for updates…*) it asks GitHub
+for the latest release. If one is newer, the zip is downloaded quietly in the
+background and installs itself when you quit the app - or immediately via
+*Restart & update*. The program folder is the only thing replaced: every
+workspace, vault entry, tab and setting lives in the separate app-data folder
+(`%APPDATA%/Pigeonhole`) and is picked up as-is by the new build. If an
+update is interrupted, the next launch notices the half-finished state and
+re-downloads.
+
 ## Keyboard shortcuts
 
 | Keys | Action |
@@ -115,16 +131,18 @@ the internal `pigeonhole://` pages, the IPC surface, the security model) is in
 ## For developers
 
 ```bash
-npm install        # electron + electron-builder (no runtime dependencies)
+npm install        # electron + playwright (no runtime dependencies)
 npm start          # run the app
 npm test           # form-engine regression suite (21 assertions)
 npm run shots      # capture every UI state to dev-shots/
-npm run dist       # cross-build the Windows portable bundle
 ```
 
 The chrome is dependency-free HTML/CSS/ES modules under `app/`; the main
-process (state store, IPC, sessions, menus, downloads, internal protocol)
-lives under `main/`. Start with [docs/how-it-works.md](docs/how-it-works.md).
+process (state store, IPC, sessions, menus, downloads, internal protocol,
+self-updater) lives under `main/`. The E2E suites live in `scripts/`
+(`e2e-suite.mjs` for the wizard/form-engine/tab flows, `test-updater.mjs`
+for the self-updater against a mock GitHub API). Start with
+[docs/how-it-works.md](docs/how-it-works.md).
 
 ## License
 

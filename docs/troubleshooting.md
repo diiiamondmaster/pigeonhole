@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## An update did not apply
+
+The updater only replaces the program folder and logs to
+`%TEMP%\pigeonhole-update.log` - check it first. Common causes: no write
+access to the folder the app lives in (move the app somewhere user-writable,
+or extract the release zip over it by hand), antivirus locking files while
+they are unpacked (the helper retries five times), or the download never
+finished (quit and start the app again - it re-checks and re-downloads on
+its own). Your data is never at risk in any of these: workspaces, vault and
+settings live in `%APPDATA%/Pigeonhole`, which updates never touch.
+
 ## First launch shows a SmartScreen warning
 
 The build is unsigned, so Windows shows "Windows protected your PC". Click
