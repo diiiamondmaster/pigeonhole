@@ -71,6 +71,8 @@ function buildAppMenu(getWindow) {
     {
       label: '&Help',
       submenu: [
+        { label: 'Check for updates…', click: () => send(getWindow, { action: 'check-updates' }) },
+        { type: 'separator' },
         { label: 'Documentation', click: () => send(getWindow, { action: 'docs' }) },
         { label: 'Email provider notes', click: () => send(getWindow, { action: 'docs-providers' }) },
         { label: 'Report an issue', click: () => send(getWindow, { action: 'issues' }) },

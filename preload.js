@@ -30,6 +30,11 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     exportVault: (wsId) => invoke('ph:vault-export', wsId)
   },
   ui: { set: (patch) => invoke('ph:ui-set', patch) },
+  updates: {
+    check: () => invoke('ph:update-check'),
+    download: () => invoke('ph:update-download'),
+    install: (mode) => invoke('ph:update-install', mode)
+  },
   app: {
     open: (kind) => invoke('ph:app-open', kind),
     info: () => invoke('ph:app-info'),

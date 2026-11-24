@@ -16,9 +16,16 @@ const { registerIpc } = require('./ipc');
 const { buildAppMenu, buildGuestMenu } = require('./menus');
 const { attachDownloadHandlers, initDownloads } = require('./downloads');
 const { registerProtocol, attachProtocolToSession } = require('./protocol');
+const { createUpdater } = require('./updater');
 
 const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
+
+// self-updater: talks to GitHub Releases in the background, reports to the
+// renderer as ph-events (update-available / progress / ready / error)
+const updater = createUpdater((type, payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ph-event', { type, payload });
+}, { beforeExit: () => store.flushNow() });
 
 // ---- single instance ----
 const gotLock = app.requestSingleInstanceLock();
@@ -119,7 +126,10 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      spellcheck: true
+      spellcheck: true,
+      // E2E harness flag: this sandbox's kernel kills sandboxed renderers that
+      // enable the webview plugin over http. Not used by the packaged app.
+      ...(process.env.PH_E2E ? { sandbox: false } : {})
     }
   });
 
@@ -136,6 +146,9 @@ function createWindow() {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.webSecurity = true;
+    // E2E harness flag only: this sandbox's kernel kills sandboxed guest
+    // renderers. The packaged app keeps guests fully sandboxed.
+    if (process.env.PH_E2E) webPreferences.sandbox = false;
     if (!/^persist:ws-[a-zA-Z0-9-]{1,40}$/.test(params.partition || '')) {
       params.partition = 'persist:ws-_unknown';
     }
@@ -143,7 +156,10 @@ function createWindow() {
 
   if (!IS_DEV) mainWindow.removeMenu();
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'app', 'index.html'));
+  // E2E/dev hook: this sandbox blocks file:// loads, so tests can serve app/
+  // over http and point the chrome at it. The packaged app always uses loadFile.
+  if (process.env.PH_APP_URL) mainWindow.loadURL(process.env.PH_APP_URL);
+  else mainWindow.loadFile(path.join(__dirname, '..', 'app', 'index.html'));
 
   mainWindow.on('ready-to-show', () => mainWindow.show());
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -184,7 +200,7 @@ app.whenReady().then(() => {
   if (process.argv.includes('--serve-dev')) serveDevPages();
 
   registerProtocol(store);
-  registerIpc(() => mainWindow, sessionForPartition, store);
+  registerIpc(() => mainWindow, sessionForPartition, store, updater);
   initDownloads(() => mainWindow);
   if (!IS_DEV || process.env.PH_MENU !== '0') buildAppMenu(() => mainWindow);
 
@@ -192,6 +208,11 @@ app.whenReady().then(() => {
   for (const w of store.state.workspaces) sessionForPartition('persist:' + w.id);
 
   createWindow();
+
+  // self-update: re-arm a pending download (the chrome needs a moment to
+  // attach its listeners), then check GitHub in the background
+  setTimeout(() => updater.reconcilePending(), 2500);
+  setTimeout(() => updater.autoCheck(), Number(process.env.PH_UPDATE_DELAY) || 6000);
 });
 
 app.on('window-all-closed', () => {
@@ -199,7 +220,10 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('before-quit', () => store.flushNow());
+app.on('before-quit', () => {
+  store.flushNow();
+  updater.applyPendingOnQuit();   // downloaded update applies itself on quit
+});
 
 // External links never open inside the browser chrome (guests keep their own
 // open-in-workspace-tab handler from the listener above).

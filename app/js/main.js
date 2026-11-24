@@ -12,6 +12,7 @@ import { initVault, openVault, closeVault } from './vault.js';
 import { settingsModal } from './modals.js';
 import { toast, downloadToast } from './toasts.js';
 import { closeWizard } from './wizard.js';
+import { handleUpdateEvent, checkUpdates } from './updates.js';
 
 let APP_INFO = { version: '1.0.0' };
 
@@ -84,11 +85,11 @@ function renderTopbar() {
 
 function renderStatusbar() {
   const w = S.activeWs();
-  qs('#statusLeft').replaceChildren(
+  qs('#statusLeft').replaceChildren(...[
     el('span', { class: 'status-item', title: 'v1.1 will route each workspace through its own proxy' },
       el('span', { class: 'dot' }), el('span', { html: 'Direct connection' })),
     w ? el('span', { class: 'status-item' }, el('b', { text: `Workspace ${w.num}` }), el('span', { text: w.identity ? w.identity.email : 'no identity yet' })) : null
-  );
+  ].filter(Boolean));
   qs('#statusRight').replaceChildren(
     el('span', { class: 'status-item', text: `Pigeonhole v${APP_INFO.version}` }),
     el('span', { class: 'status-item', text: 'Local-first · no telemetry' }));
@@ -107,6 +108,8 @@ function handleEvent({ type, payload }) {
     S.refresh().then(() => { renderSidebar(); renderTopbar(); });
   } else if (type === 'scene') {
     runScene(payload);
+  } else if (type && type.startsWith('update-')) {
+    handleUpdateEvent(type, payload);
   }
 }
 
@@ -138,6 +141,7 @@ export function runAction(action, extra = {}) {
     case 'docs': PH().app.open('docs'); break;
     case 'docs-providers': PH().app.open('docs-providers'); break;
     case 'issues': PH().app.open('issues'); break;
+    case 'check-updates': checkUpdates({ manual: true }); break;
   }
 }
 
@@ -206,6 +210,10 @@ async function runScene(payload) {
     import('./wizard.js').then(m => m.driveMockFlow(created.id, 'http://127.0.0.1:8123/provider-mock.html', { hold: name === 'wizard-create' }));
   } else if (name === 'wizard-provider') {
     import('./wizard.js').then(m => m.openWizardAt(wsId, 'provider'));
+  } else if (name === 'wizard-identity') {
+    import('./wizard.js').then(m => m.openWizardAt(wsId, 'identity'));
+  } else if (name === 'wizard-confirm') {
+    import('./wizard.js').then(m => m.openWizardAt(wsId, 'confirm'));
   } else if (name === 'settings-identity') {
     settingsModal('identity');
   }

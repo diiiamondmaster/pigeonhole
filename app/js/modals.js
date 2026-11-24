@@ -7,6 +7,7 @@ import * as Tabs from './tabs.js';
 import { renderSidebar, applyCollapsed } from './sidebar.js';
 import { genPassword } from './wizard.js';
 import { toast } from './toasts.js';
+import { checkUpdates } from './updates.js';
 
 let openCount = 0;
 
@@ -22,8 +23,16 @@ export function openModal({ title, size = '', body, footer = [], onClose }) {
       class: `btn ${f.primary ? 'btn-primary' : ''} ${f.danger ? 'btn-danger' : ''}`,
       text: f.label,
       // every footer button closes the modal; a handler's return value is
-      // forwarded to onClose so dialogs like promptModal can capture it
-      onclick: () => { const r = f.onClick ? f.onClick() : undefined; if (r !== false) close(r); }
+      // forwarded to onClose so dialogs like promptModal can capture it.
+      // Async handlers are awaited first: an awaited `false` (validation
+      // failure) keeps the dialog open, a resolved Promise must not.
+      onclick: async () => {
+        try {
+          const r = f.onClick ? f.onClick() : undefined;
+          const val = (r && typeof r.then === 'function') ? await r : r;
+          if (val !== false) close(val);
+        } catch (err) { console.error('[modal] footer handler failed', err); }
+      }
     }))));
   overlay.append(modal);
 
@@ -122,7 +131,7 @@ export async function settingsModal(activeTab = 'general') {
 
     privacy: () => el('div', {},
       section('What Pigeonhole stores',
-        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'Everything lives on this computer, in the app data folder: one state file (workspaces, settings, vault) plus one isolated browser profile per workspace. The app itself makes no network requests except loading the pages you visit. There is no telemetry, no analytics, no account.' }),
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'Everything lives on this computer, in the app data folder: one state file (workspaces, settings, vault) plus one isolated browser profile per workspace. The app itself makes no network requests except loading the pages you visit - and one background check of the GitHub Releases feed (api.github.com) that powers the built-in updater. There is no telemetry, no analytics, no account.' }),
         st.vaultEncrypted
           ? el('div', { class: 'pill success', text: 'Passwords encrypted with the OS credential store' })
           : el('div', { class: 'pill danger', text: 'OS credential store unavailable - vault stored in plain text' })),
@@ -135,7 +144,10 @@ export async function settingsModal(activeTab = 'general') {
     about: () => el('div', { style: { textAlign: 'center', padding: '18px 6px' } },
       el('div', { style: { color: 'var(--accent)', display: 'flex', justifyContent: 'center', marginBottom: '10px' }, html: icon('logo', 54) }),
       el('h2', { style: { fontSize: '19px', marginBottom: '4px' }, text: 'Pigeonhole' }),
-      el('div', { style: { color: 'var(--text-faint)', fontSize: '12px', marginBottom: '16px' }, text: `v${appInfo.version} · Electron ${appInfo.electron} · Chromium ${appInfo.chrome}` }),
+      el('div', { style: { color: 'var(--text-faint)', fontSize: '12px', marginBottom: '14px' }, text: `v${appInfo.version} · Electron ${appInfo.electron} · Chromium ${appInfo.chrome}` }),
+      el('div', { class: 'row', style: { justifyContent: 'center', gap: '8px', flexWrap: 'wrap' } },
+        el('button', { class: 'btn btn-sm', html: icon('download', 13) + ' Check for updates', onclick: () => checkUpdates({ manual: true }) })),
+      el('p', { style: { marginTop: '8px', fontSize: '11px', color: 'var(--text-faint)', lineHeight: '1.55', marginBottom: '16px' }, text: 'Updates pull from GitHub Releases automatically: the app checks on its own, downloads in the background and installs itself when you quit. Workspaces, vault and settings are never touched.' }),
       el('p', { style: { fontSize: '12.5px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '18px' }, text: 'A lightweight multi-identity workspace browser. Every account gets its own clean room - separate cookies, cache and storage - under one roof.' }),
       el('div', { class: 'row', style: { justifyContent: 'center', gap: '8px', flexWrap: 'wrap' } },
         el('button', { class: 'btn btn-sm', html: icon('docs', 13) + ' Documentation', onclick: () => PH().app.open('docs') }),

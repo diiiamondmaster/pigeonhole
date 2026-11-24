@@ -13,7 +13,7 @@ function bad(reason) { const e = new Error(reason); e.invalidInput = true; retur
 const str = (v, max = 400) => (typeof v === 'string' ? v.slice(0, max) : '');
 const isHttpUrl = (u) => /^https?:\/\//i.test(u || '');
 
-function registerIpc(getWindow, sessionForPartition, store) {
+function registerIpc(getWindow, sessionForPartition, store, updater) {
 
   const send = (type, payload) => {
     const w = getWindow();
@@ -108,18 +108,21 @@ function registerIpc(getWindow, sessionForPartition, store) {
   // ---------- settings ----------
   ipcMain.handle('ph:settings-set', (_e, patch) => {
     if (!patch || typeof patch !== 'object') throw bad('bad patch');
-    return store.setSettings({
-      searchEngine: str(patch.searchEngine, 20),
-      identityMode: str(patch.identityMode, 12),
-      identityBase: str(patch.identityBase, 40).replace(/[^a-zA-Z0-9._-]/g, ''),
-      identityPadding: Math.max(1, Math.min(6, Number(patch.identityPadding) || 3)),
-      identityStart: Math.max(1, Math.min(9999, Number(patch.identityStart) || 1)),
-      pwLength: Math.max(10, Math.min(64, Number(patch.pwLength) || 16)),
-      pwSymbols: !!patch.pwSymbols,
-      autoFillOnLoad: !!patch.autoFillOnLoad,
-      autoDetectSuccess: !!patch.autoDetectSuccess,
-      downloadsDir: str(patch.downloadsDir, 500)
-    });
+    // Only copy keys the caller actually sent. Building a full object from a
+    // partial patch would overwrite every untouched setting (wiping the
+    // identity base and silently disabling the wizard's autofill toggles).
+    const out = {};
+    if (typeof patch.searchEngine === 'string') out.searchEngine = str(patch.searchEngine, 20);
+    if (typeof patch.identityMode === 'string') out.identityMode = str(patch.identityMode, 12);
+    if (typeof patch.identityBase === 'string') out.identityBase = str(patch.identityBase, 40).replace(/[^a-zA-Z0-9._-]/g, '');
+    if (patch.identityPadding != null) out.identityPadding = Math.max(1, Math.min(6, Number(patch.identityPadding) || 3));
+    if (patch.identityStart != null) out.identityStart = Math.max(1, Math.min(9999, Number(patch.identityStart) || 1));
+    if (patch.pwLength != null) out.pwLength = Math.max(10, Math.min(64, Number(patch.pwLength) || 16));
+    if (patch.pwSymbols != null) out.pwSymbols = !!patch.pwSymbols;
+    if (patch.autoFillOnLoad != null) out.autoFillOnLoad = !!patch.autoFillOnLoad;
+    if (patch.autoDetectSuccess != null) out.autoDetectSuccess = !!patch.autoDetectSuccess;
+    if (typeof patch.downloadsDir === 'string') out.downloadsDir = str(patch.downloadsDir, 500);
+    return store.setSettings(out);
   });
 
   ipcMain.handle('ph:settings-set-shared-password', (_e, pw) => {
@@ -204,6 +207,11 @@ function registerIpc(getWindow, sessionForPartition, store) {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
     return { ok: true, filePath };
   });
+
+  // ---------- self-update ----------
+  ipcMain.handle('ph:update-check', () => updater.check({ silent: true }));
+  ipcMain.handle('ph:update-download', () => updater.download());
+  ipcMain.handle('ph:update-install', (_e, mode) => updater.install(mode === 'restart' ? 'restart' : 'quit'));
 
   // ---------- ui / misc ----------
   ipcMain.handle('ph:ui-set', (_e, patch) => {
