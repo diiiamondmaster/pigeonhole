@@ -72,7 +72,8 @@ export function openWizard(wsId) {
       draft: {
         mode: st.identityMode || 'numbered',
         base, num: nextNumberFor(base), padding: st.identityPadding || 3,
-        first: extras.first, last: extras.last, word: pick(WORDS), customLocal: '',
+        first: extras.first, last: extras.last, word: pick(WORDS), wordSuffix: 100 + rnd(900), customLocal: '',
+        nameSuffix: 100 + rnd(900),
         domain: '', pwMode: st.hasSharedPassword ? 'shared' : 'generate',
         pwCustom: '', pwGen: genPassword(st.pwLength || 16, st.pwSymbols !== false),
         extras
@@ -105,8 +106,8 @@ function emailPreview(s) {
   let local = '';
   if (s.mode === 'existing') return d.existingEmail || '';
   if (d.mode === 'numbered') local = d.base ? d.base + zeroPad(d.num || 1, d.padding) : '';
-  else if (d.mode === 'human') local = `${d.first}.${d.last}${100 + rnd(0)}`.replace(/[^a-z0-9._-]/g, '');
-  else if (d.mode === 'words') local = d.word + (100 + rnd(900));
+  else if (d.mode === 'human') local = `${d.first}.${d.last}${d.nameSuffix || 100}`.replace(/[^a-z0-9._-]/g, '');
+  else if (d.mode === 'words') local = d.word + (d.wordSuffix || 100);
   else local = d.customLocal;
   return local ? `${local}@${domain}` : '';
 }
@@ -474,6 +475,7 @@ async function saveIdentity(s) {
   sessions.delete(s.wsId);
   closeWizard();
   const w = S.ws(s.wsId);
+  if (!w) return;   // workspace was deleted mid-wizard
   toast({
     title: `Workspace ${w.num} is ready`,
     sub: `${finalEmail} - its own cookies, storage and identity`,
@@ -533,17 +535,11 @@ async function wizardPoll() {
     }
   }
 
-  // success detection
+  // success detection: trust the provider's own post-signup pages
   if (!s.created && S.settings().autoDetectSuccess !== false) {
     const prov = providerById(s.providerId);
     const url = tab.url || '';
-    let done = false;
-    if (prov?.successPatterns?.some(re => re.test(url))) done = true;
-    else if (prov && !url.startsWith('https://' + prov.host) && !url.startsWith('https://' + prov.host.replace('www.', 'www.')) ) {
-      // navigated off the signup host entirely (and not to an error page)
-      if (!url.startsWith('pigeonhole://') && !/signup|register|create/i.test(url)) done = true;
-    }
-    if (done) {
+    if (prov?.successPatterns?.some(re => re.test(url))) {
       s.created = true;
       s.step = 'confirm';
       toast({ title: 'Signup looks complete', sub: 'Confirm the details to save the identity', type: 'success', ic: 'check' });

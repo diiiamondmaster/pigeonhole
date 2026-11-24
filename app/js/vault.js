@@ -26,7 +26,8 @@ export async function openVault(wsId) {
         el('div', { class: 'row', style: { marginTop: '12px', flexWrap: 'wrap', gap: '7px' } },
           el('button', { class: 'btn btn-sm', html: icon('copy', 13) + ' Copy email', onclick: async () => copyText(w.identity.email) }),
           el('button', { class: 'btn btn-sm', html: icon('copy', 13) + ' Copy password', onclick: async () => { const pw = await PH().vault.secret(w.id, 'identity'); await copyText(pw || ''); toastMini('Password copied'); } }),
-          el('button', { class: 'btn btn-sm btn-ghost', html: icon('key', 13) + ' Show password', onclick: async (e) => { const pw = await PH().vault.secret(w.id, 'identity'); alertBox(panel, `Password for ${w.identity.email}:`, pw || '(none stored)'); } }))
+          el('button', { class: 'btn btn-sm btn-ghost', html: icon('key', 13) + ' Show password', onclick: async (e) => { const pw = await PH().vault.secret(w.id, 'identity'); alertBox(panel, `Password for ${w.identity.email}:`, pw || '(none stored)'); } }),
+          el('button', { class: 'btn btn-sm btn-ghost', html: icon('gear', 13) + ' Edit', onclick: () => editIdentity(w) }))
       )
     : el('div', { class: 'empty-note' },
         icon('mail', 26), el('div', { style: { marginTop: '8px' }, text: 'No email identity in this workspace yet.' }),
@@ -81,6 +82,35 @@ export async function openVault(wsId) {
 }
 
 function toastMini(msg) { import('./toasts.js').then(m => m.toast({ title: msg, ic: 'check', type: 'success', timeout: 2200 })); }
+
+function editIdentity(w) {
+  import('./modals.js').then(({ openModal }) => {
+    const fEmail = el('input', { class: 'input mono', value: w.identity.email });
+    const fName = el('input', { class: 'input', value: w.identity.displayName || '' });
+    const fPw = el('input', { class: 'input mono', type: 'password', placeholder: 'unchanged' });
+    openModal({
+      title: 'Edit identity', size: 'sm',
+      body: el('div', {},
+        el('div', { class: 'field' }, el('label', { text: 'Email address' }), fEmail),
+        el('div', { class: 'field' }, el('label', { text: 'Display name' }), fName),
+        el('div', { class: 'field' }, el('label', { text: 'New password (leave blank to keep)' }), fPw)),
+      footer: [
+        { label: 'Cancel' },
+        {
+          label: 'Save', primary: true, onClick: async () => {
+            if (!fEmail.value.includes('@')) { toastMini('Email looks wrong'); return false; }
+            const patch = { email: fEmail.value.trim(), displayName: fName.value.trim() };
+            if (fPw.value) patch.password = fPw.value;
+            await PH().vault.updateIdentity(w.id, patch);
+            await S.refresh();
+            toastMini('Identity updated');
+            openVault(w.id);
+          }
+        }
+      ]
+    });
+  });
+}
 function alertBox(panel, title, body) {
   import('./modals.js').then(m => m.openModal({
     title, size: 'sm',

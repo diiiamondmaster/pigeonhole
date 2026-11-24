@@ -35,6 +35,9 @@ function registerIpc(getWindow, sessionForPartition, store) {
     const src = store.getWorkspace(wsId);
     if (!src) throw bad('no such workspace');
     const ws = store.createWorkspace({ hue: src.hue });
+    // quick links carry over; the identity and browsing data stay fresh
+    ws.quickLinks = Array.isArray(src.quickLinks) ? [...src.quickLinks] : [];
+    store.save();
     sessionForPartition('persist:' + ws.id);
     return { id: ws.id, num: ws.num, name: ws.name, hue: ws.hue };
   });
@@ -95,7 +98,10 @@ function registerIpc(getWindow, sessionForPartition, store) {
 
   ipcMain.handle('ph:history-add', (_e, wsId, entry) => {
     if (!WS_ID.test(wsId || '')) throw bad('bad id');
-    if (entry && isHttpUrl(entry.url)) store.addHistory(wsId, { url: entry.url, title: str(entry.title, 200) });
+    if (entry && isHttpUrl(entry.url)) {
+      // titles come from web pages - keep them from smuggling markup into the NTP
+      store.addHistory(wsId, { url: entry.url, title: str(entry.title, 200).replace(/[<>]/g, '') });
+    }
     return true;
   });
 
@@ -232,6 +238,12 @@ function registerIpc(getWindow, sessionForPartition, store) {
   ipcMain.handle('ph:set-title', (_e, title) => {
     const w = getWindow();
     if (w && !w.isDestroyed()) w.setTitle(str(title, 200) || 'Pigeonhole');
+    return true;
+  });
+
+  ipcMain.handle('ph:open-devtools', () => {
+    const w = getWindow();
+    if (w && !w.isDestroyed()) w.webContents.openDevTools({ mode: 'detach' });
     return true;
   });
 

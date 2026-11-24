@@ -39,13 +39,21 @@ function makeHandler(scope) {
           engine: store.state.settings.searchEngine
         };
         if (!ntpCache) ntpCache = readTemplate(path.join('ntp', 'ntp.html'));
-        const html = ntpCache.replace('"__NTP_DATA__"', JSON.stringify(data));
-        return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        // escape < so a hostile page title can never break out of the script block
+        const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/\u2028|\u2029/g, ' ');
+        const html = ntpCache.replace('"__NTP_DATA__"', json);
+        return new Response(html, { headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'"
+        } });
       }
 
       if (host === 'error') {
         const html = readTemplate(path.join('error', 'error.html'));
-        return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        return new Response(html, { headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"
+        } });
       }
 
       return new Response('Not found', { status: 404 });

@@ -20,7 +20,10 @@ export function openModal({ title, size = '', body, footer = [], onClose }) {
   if (footer.length) modal.append(el('div', { class: 'modal-foot' },
     footer.map(f => el('button', {
       class: `btn ${f.primary ? 'btn-primary' : ''} ${f.danger ? 'btn-danger' : ''}`,
-      text: f.label, onclick: () => f.onClick ? f.onClick() : close()
+      text: f.label,
+      // every footer button closes the modal; a handler's return value is
+      // forwarded to onClose so dialogs like promptModal can capture it
+      onclick: () => { const r = f.onClick ? f.onClick() : undefined; if (r !== false) close(r); }
     }))));
   overlay.append(modal);
 
@@ -47,7 +50,7 @@ export function confirmModal({ title, body, actionLabel = 'Confirm', danger = fa
         { label: actionLabel, primary: !danger, danger, onClick: () => resolve(true) }
       ]
     });
-  }).then(ok => { qs('#modalRoot').replaceChildren(); return ok; });
+  });
 }
 
 // =====================================================================
@@ -59,6 +62,8 @@ const TABS_LIST = [
 ];
 
 export async function settingsModal(activeTab = 'general') {
+  // settings replaces itself on tab switches - never stack overlays
+  qs('#modalRoot').replaceChildren();
   const st = S.settings();
   const appInfo = await PH().app.info();
 
@@ -109,8 +114,11 @@ export async function settingsModal(activeTab = 'general') {
           'When the signup page moves on to the inbox, the wizard advances by itself.',
           st.autoDetectSuccess, async (v) => { await PH().settings.set({ autoDetectSuccess: v }); await S.refresh(); })),
       section('Email providers',
-        el('p', { style: { fontSize: '11.5px', color: 'var(--text-dim)', lineHeight: '1.6' }, html: `The wizard shows a provider table every time. Current favourites: <b>Proton Mail</b>, <b>Tuta</b> and <b>Mailfence</b> - none require a phone number. Full notes live in <span class="link-btn" onclick="window.pigeonhole.app.open('docs-providers')">docs/email-providers.md</span>.` })),
-    ),
+        el('p', { style: { fontSize: '11.5px', color: 'var(--text-dim)', lineHeight: '1.6' }, text: 'The wizard shows a provider table every time. Current favourites: Proton Mail, Tuta and Mailfence - none require a phone number. Full notes: ' },
+          el('span', {
+            class: 'link-btn', text: 'docs/email-providers.md',
+            onclick: () => PH().app.open('docs-providers')
+          })))),
 
     privacy: () => el('div', {},
       section('What Pigeonhole stores',
@@ -151,6 +159,7 @@ export async function settingsModal(activeTab = 'general') {
 export async function wsSettingsModal(wsId) {
   const w = S.ws(wsId);
   if (!w) return;
+  qs('#modalRoot').replaceChildren();
   const nameInput = el('input', { class: 'input', value: /^Workspace \d+$/.test(w.name) ? '' : w.name, placeholder: `Workspace ${w.num} (default name)` });
 
   const hues = [36, 12, 350, 320, 262, 220, 190, 160, 90, 45];
@@ -207,11 +216,10 @@ export async function wsSettingsModal(wsId) {
           })))
     ),
     footer: [
-      { label: 'Close', onClick: () => {} },
+      { label: 'Close' },
       {
         label: 'Save', primary: true, onClick: async () => {
           if (nameInput.value.trim()) { await PH().workspaces.rename(w.id, nameInput.value.trim().slice(0, 80)); await S.refresh(); renderSidebar(); }
-          qs('#modalRoot').replaceChildren();
         }
       }
     ]

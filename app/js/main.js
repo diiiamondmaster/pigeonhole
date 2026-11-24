@@ -134,6 +134,7 @@ export function runAction(action, extra = {}) {
     case 'zoom-out': Tabs.setZoom(wsId, Tabs.getZoom(wsId) / 1.2); break;
     case 'zoom-reset': Tabs.setZoom(wsId, 1); break;
     case 'devtools-guest': { const wv = Tabs.webviewOf(wsId); try { wv?.openDevTools(); } catch { } break; }
+    case 'devtools': PH().app.openDevTools(); break;
     case 'docs': PH().app.open('docs'); break;
     case 'docs-providers': PH().app.open('docs-providers'); break;
     case 'issues': PH().app.open('issues'); break;

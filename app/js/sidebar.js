@@ -26,7 +26,6 @@ export function renderSidebar() {
       el('span', { text: w.num }),
       w.identity ? el('span', { class: 'tile-sub', html: icon('mail', 8) }) : null
     );
-    tile.dataset.tip = `${escapeHtml(w.name)}${w.identity ? ` — ${escapeHtml(w.identity.email)}` : ' — no email yet'}`;
     tile.addEventListener('mouseenter', () => showTip(tile, w));
     tile.addEventListener('mouseleave', hideTip);
     tilesRoot.append(tile);
@@ -158,16 +157,17 @@ export function toggleSidebar() {
 function promptModal(title, value = '') {
   return new Promise((resolve) => {
     const input = el('input', { class: 'input', value, style: { width: '100%' } });
-    const { close } = openModal({
+    openModal({
       title, size: 'sm',
       body: el('div', {}, input),
+      onClose: (v) => resolve(v ?? null),
       footer: [
-        { label: 'Cancel', onClick: () => close(null) },
-        { label: 'Save', primary: true, onClick: () => close(input.value) }
+        { label: 'Cancel', onClick: () => null },
+        { label: 'Save', primary: true, onClick: () => input.value }
       ]
     });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') close(input.value);
+      if (e.key === 'Enter') { const v = input.value; input.value = v; qs('#modalRoot').replaceChildren(); resolve(v); }
     });
     setTimeout(() => { input.focus(); input.select(); }, 30);
   });

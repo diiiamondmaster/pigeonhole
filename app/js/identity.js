@@ -24,8 +24,9 @@ export function initIdentity() {
     if (pendingCreds && pendingCreds.wsId === wsId && prev && pendingCreds.origin && pendingCreds.origin === originOf(prev)) {
       showSaveOffer(pendingCreds);
       pendingCreds = null;
+    } else {
+      hideOffer();
     }
-    hideOffer();
   });
   bus.on('ws-activated', hideOffer);
   bus.on('tab-activated', hideOffer);

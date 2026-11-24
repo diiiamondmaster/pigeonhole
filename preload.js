@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     setTitle: (t) => invoke('ph:set-title', t),
     cancelDownload: (id) => invoke('ph:dl-cancel', id),
     showItem: (p) => invoke('ph:show-item', p),
+    openDevTools: () => invoke('ph:open-devtools'),
     pickDownloadsDir: () => invoke('ph:pick-downloads-dir')
   },
   onEvent: (cb) => {

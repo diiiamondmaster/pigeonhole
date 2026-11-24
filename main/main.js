@@ -201,8 +201,10 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => store.flushNow());
 
-// External links never open inside the browser chrome.
+// External links never open inside the browser chrome (guests keep their own
+// open-in-workspace-tab handler from the listener above).
 app.on('web-contents-created', (_e, wc) => {
+  if (isGuestOf(wc)) return;
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };

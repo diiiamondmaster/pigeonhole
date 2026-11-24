@@ -10,6 +10,9 @@ import { bus, PH } from './state.js';
 
 const NTP = (wsId) => `pigeonhole://newtab?ws=${wsId}`;
 
+// keep the address-bar suggestions fresh without hammering IPC on every title change
+const refreshSoon = debounce(() => { S.refresh().then(() => bus.emit('history-refreshed')); }, 900);
+
 const containers = new Map();   // wsId -> {root, views: Map(tabId -> webview)}
 const tabs = new Map();         // wsId -> [{id,url,title,favicon,active,loading,suspended,domReady,zoom}]
 
@@ -82,6 +85,7 @@ export function ensureWebviews(wsId) {
 function buildWebview(wsId, tab) {
   const wv = el('webview', {
     partition: 'persist:' + wsId,
+    allowpopups: '',
     'data-tab': tab.id
   });
   wv.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no');
@@ -101,7 +105,7 @@ function buildWebview(wsId, tab) {
       // internal pages: not history
     } else {
       PH().history.add(wsId, { url, title: tab.title });
-      S.refreshLocal?.();
+      refreshSoon();
     }
     bus.emit('page-nav', { wsId, tabId: tab.id, tab, wv, url, prev });
     render(wsId);
@@ -118,6 +122,8 @@ function buildWebview(wsId, tab) {
   });
   wv.addEventListener('page-title-updated', (e) => {
     tab.title = e.title || tab.title;
+    // the title arrives after did-navigate - patch the history entry it belongs to
+    if (/^https?:/i.test(tab.url)) PH().history.add(wsId, { url: tab.url, title: tab.title });
     render(wsId);
     if (isActiveTab(wsId, tab)) bus.emit('active-tab-updated', { wsId, tab });
   });
@@ -130,7 +136,7 @@ function buildWebview(wsId, tab) {
   wv.addEventListener('did-fail-load', (e) => {
     if (!e.isMainFrame) return;
     if (e.errorCode === -3) return; // aborted
-    const target = tab.url || safeUrl(wv);
+    const target = e.validatedURL || tab.url || safeUrl(wv);
     tab.lastError = { code: e.errorCode, desc: e.errorDescription };
     const q = `pigeonhole://error?code=${encodeURIComponent(e.errorCode)}&desc=${encodeURIComponent(e.errorDescription || '')}&url=${encodeURIComponent(target)}`;
     try { wv.loadURL(q); } catch { wv.setAttribute('src', q); }
@@ -160,7 +166,7 @@ function syncViewVisibility(wsId) {
 // ---------- tab CRUD ----------
 export function list(wsId) { return tabs.get(wsId) || []; }
 export function currentTab(wsId) {
-  const l = tabs.get(S.getActiveWsId() === wsId ? wsId : wsId) || [];
+  const l = tabs.get(wsId) || [];
   return l.find(t => t.active) || l[0] || null;
 }
 const isActiveTab = (wsId, tab) => S.getActiveWsId() === wsId && tab.active;
@@ -212,7 +218,7 @@ export function activateTab(wsId, tabId, { render: doRender = true } = {}) {
   }
   syncViewVisibility(wsId);
   if (doRender) render(wsId);
-  bus.emit('tab-activated', { wsId, tab });
+  bus.emit('tab-activated', { wsId, tab: t });
   bus.emit('active-tab-updated', { wsId, tab: t });
   persist(wsId);
 }

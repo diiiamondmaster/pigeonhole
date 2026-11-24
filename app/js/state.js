@@ -33,10 +33,3 @@ export const tabsFor = (id) => snapshot?.tabs?.[id] || [];
 export const getActiveWsId = () => activeWsId;
 export const setActiveWsId = (id) => { activeWsId = id; };
 export const activeWs = () => ws(activeWsId);
-
-export function updateWorkspaceInSnapshot(updated) {
-  const list = snapshot?.workspaces || [];
-  const i = list.findIndex(w => w.id === updated.id);
-  if (i >= 0) list[i] = { ...list[i], ...updated };
-  bus.emit('ws-updated', updated);
-}

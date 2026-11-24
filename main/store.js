@@ -57,6 +57,13 @@ class Store {
           if (!this.state.ui) this.state.ui = defaultState().ui;
           if (!this.state.tabs) this.state.tabs = {};
           if (!this.state.history) this.state.history = {};
+          // normalize entries so one malformed record cannot brick boot
+          this.state.workspaces = this.state.workspaces.filter(w => w && typeof w === 'object' && typeof w.id === 'string')
+            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [] }));
+          for (const w of this.state.workspaces) {
+            if (!Array.isArray(this.state.tabs[w.id])) this.state.tabs[w.id] = [];
+            if (!Array.isArray(this.state.history[w.id])) this.state.history[w.id] = [];
+          }
         }
       }
     } catch (e) {
@@ -243,7 +250,6 @@ class Store {
     this.save();
   }
   getTabs(wsId) { return this.state.tabs[wsId] || []; }
-
   addHistory(wsId, { url, title }) {
     if (!this.getWorkspace(wsId)) return;
     if (!/^https?:/i.test(url || '')) return;
