@@ -27,7 +27,10 @@ export function containerFor(wsId) { return containers.get(wsId); }
 export function mountWorkspace(wsId) {
   if (containers.has(wsId)) return containers.get(wsId);
   const views = new Map();
-  const root = el('div', { class: 'ws-view', 'data-ws': wsId });
+  const root = el('div', {
+    class: `ws-view ${S.getActiveWsId() === wsId ? 'active' : ''}`,
+    'data-ws': wsId
+  });
   qs('#wsViews').append(root);
   const c = { root, views };
   containers.set(wsId, c);
@@ -44,7 +47,10 @@ export function destroyWorkspace(wsId) {
 export function restoreWorkspace(wsId, storedTabs, { lazy = false } = {}) {
   mountWorkspace(wsId);
   const list = (storedTabs || []).map(t => ({
-    id: t.id || newTabId(), url: t.url || NTP(wsId), title: t.title || '',
+    id: t.id || newTabId(),
+    // NTP tabs are always re-pointed at this workspace so the page gets the right data
+    url: !t.url || /^pigeonhole:\/\/newtab/.test(t.url) ? NTP(wsId) : t.url,
+    title: t.title || '',
     favicon: t.favicon || null, active: !!t.active, loading: false,
     suspended: true, domReady: false, zoom: 1
   }));
@@ -252,8 +258,13 @@ export function switchWorkspace(wsId, { fromBoot = false } = {}) {
   for (const [id, c] of containers) c.root.classList.toggle('active', id === wsId);
   // containers of workspaces never opened yet
   const w = S.ws(wsId);
-  if (w && !containers.has(wsId)) restoreWorkspace(wsId, S.tabsFor(wsId), { lazy: false });
-  else ensureWebviews(wsId);
+  if (w && !containers.has(wsId)) {
+    restoreWorkspace(wsId, S.tabsFor(wsId), { lazy: false });
+    // restoreWorkspace may have mounted the container - mark it active now
+    containers.get(wsId)?.root.classList.add('active');
+  } else {
+    ensureWebviews(wsId);
+  }
   render(wsId);
   bus.emit('ws-activated', { wsId, fromBoot });
   bus.emit('tab-activated', { wsId, tab: currentTab(wsId) });

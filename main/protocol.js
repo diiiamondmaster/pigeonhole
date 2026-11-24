@@ -14,11 +14,11 @@ function readTemplate(rel) {
   return fs.readFileSync(path.join(__dirname, '..', 'app', rel), 'utf8');
 }
 
-function registerProtocol(storeRef) {
-  store = storeRef;
-  const { protocol } = require('electron');
-
-  protocol.handle('pigeonhole', (request) => {
+// The handler is attached to the default session here and to every workspace
+// partition session via attachProtocolToSession - webviews do not share the
+// default session's protocol handlers.
+function makeHandler(scope) {
+  return (request) => {
     try {
       const u = new URL(request.url);
       const host = u.hostname;
@@ -52,7 +52,18 @@ function registerProtocol(storeRef) {
     } catch (e) {
       return new Response('Bad request', { status: 400 });
     }
-  });
+  };
 }
 
-module.exports = { registerProtocol };
+function registerProtocol(storeRef) {
+  store = storeRef;
+  const { protocol } = require('electron');
+  protocol.handle('pigeonhole', makeHandler('default'));
+}
+
+function attachProtocolToSession(ses) {
+  try { ses.protocol.handle('pigeonhole', makeHandler('partition')); }
+  catch (e) { console.error('[protocol] attach failed:', e.message); }
+}
+
+module.exports = { registerProtocol, attachProtocolToSession };

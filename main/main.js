@@ -15,7 +15,7 @@ const { store } = require('./store');
 const { registerIpc } = require('./ipc');
 const { buildAppMenu, buildGuestMenu } = require('./menus');
 const { attachDownloadHandlers, initDownloads } = require('./downloads');
-const { registerProtocol } = require('./protocol');
+const { registerProtocol, attachProtocolToSession } = require('./protocol');
 
 const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
@@ -39,12 +39,23 @@ function isGuestOf(wc) {
 
 function sessionForPartition(partition) {
   const ses = session.fromPartition(partition);
+  attachProtocolToSession(ses);
   attachDownloadHandlers(ses);
   return ses;
 }
 
 app.on('web-contents-created', (_ev, wc) => {
   if (!isGuestOf(wc)) return;
+
+  // partitions created implicitly by <webview> tags need the internal
+  // protocol + download handling attached as well
+  try {
+    const ses = wc.session;
+    if (ses.partition && ses.partition.startsWith('persist:ws-')) {
+      attachProtocolToSession(ses);
+      attachDownloadHandlers(ses);
+    }
+  } catch { }
 
   // window.open / target=_blank  ->  a new tab in the same workspace
   wc.setWindowOpenHandler(({ url }) => {
@@ -166,10 +177,11 @@ function createWindow() {
 
 // ---- app lifecycle ----
 app.whenReady().then(() => {
-  app.commandLine.appendSwitch('disable-features', 'PlzDedicatedThreadForImageDecoding'); // keep default otherwise
   store.load();
 
   if (process.argv.includes('--demo')) seedDemo();
+
+  if (process.argv.includes('--serve-dev')) serveDevPages();
 
   registerProtocol(store);
   registerIpc(() => mainWindow, sessionForPartition, store);
@@ -197,6 +209,22 @@ app.on('web-contents-created', (_e, wc) => {
   });
 });
 
+// ---- dev-only static server for the local form playgrounds ----
+function serveDevPages() {
+  const http = require('http');
+  const dir = path.join(__dirname, '..', 'dev');
+  const srv = http.createServer((req, res) => {
+    try {
+      const rel = (req.url || '/').split('?')[0].replace(/^\//, '') || 'provider-mock.html';
+      const file = path.join(dir, path.normalize(rel));
+      if (!file.startsWith(dir)) { res.statusCode = 403; return res.end(); }
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.end(fs.readFileSync(file));
+    } catch { res.statusCode = 404; res.end('not found'); }
+  });
+  srv.listen(8123, '127.0.0.1', () => console.log('[dev] form playgrounds on http://127.0.0.1:8123'));
+}
+
 // ---- dev-only demo seeding ----
 function seedDemo() {
   const s = store.state;
@@ -205,7 +233,9 @@ function seedDemo() {
     const ws = store.createWorkspace({});
     store.setIdentity(ws.id, { email, password: 'demo-password-123', displayName: name, provider: 'Proton Mail' });
     store.saveTabs(ws.id, links.map((l, i) => ({
-      id: 't' + ws.num + i, url: l.url, title: l.title, active: i === 0, favicon: null
+      id: 't' + ws.num + i,
+      url: l.url === 'pigeonhole://newtab' ? `pigeonhole://newtab?ws=${ws.id}` : l.url,
+      title: l.title, active: i === 0, favicon: null
     })));
     return ws;
   };
