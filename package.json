@@ -1,7 +1,7 @@
 {
   "name": "pigeonhole",
   "productName": "Pigeonhole",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A lightweight multi-identity workspace browser. Every account gets its own clean room.",
   "main": "main/main.js",
   "license": "MIT",
@@ -9,12 +9,43 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "shot": "node scripts/dev-shot.mjs",
-    "dist": "electron-builder --win --x64",
-    "dist:portable": "electron-builder --win --x64 portable"
+    "test": "electron scripts/test-autofill.mjs",
+    "shots": "bash scripts/dev-shots.sh",
+    "dist": "electron-builder --win --x64"
   },
   "devDependencies": {
     "electron": "^38.0.0",
     "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.diiiamondmaster.pigeonhole",
+    "productName": "Pigeonhole",
+    "copyright": "MIT License - diiiamondmaster",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main/**/*",
+      "preload.js",
+      "app/**/*",
+      "assets/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "dir", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Pigeonhole",
+      "artifactName": "Pigeonhole-Setup-${version}.${ext}"
+    }
   }
 }
