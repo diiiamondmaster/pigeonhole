@@ -71,7 +71,7 @@ const m = MAP[code];
 if (m) { document.getElementById('title').textContent = m[0]; document.getElementById('desc').textContent = m[1]; }
 else if (desc) { document.getElementById('desc').textContent = desc; }
 
-document.getElementById('url').textContent = url.replace(/^https?:\/\//, '').split('/').join('/ ');
+document.getElementById('url').textContent = url.length > 72 ? url.slice(0, 72) + '…' : url;
 document.getElementById('code').textContent = code ? 'Error ' + code : '';
 
 document.getElementById('retry').onclick = () => { window.__phAction = { type: 'navigate', url: url }; };

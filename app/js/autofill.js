@@ -81,13 +81,14 @@ const PAGE_HELPERS = `
       if (/last(\\s?name)?|family|surname/.test(h)) { slots.last = el; continue; }
       if (/^(full|your|display)?\\s*name$|full.?name|display.?name/.test(h) && /name/.test(h)) { slots.full = el; continue; }
       if (/birth|dob|b-?day|date.?of.?birth/.test(h)) {
-        if (type === 'select' || /day|dd$/.test(h)) slots.dobDay = el;
-        else if (/month|mm$/.test(h)) slots.dobMonth = el;
-        else if (/year|yyyy/.test(h)) slots.dobYear = el;
-        else slots.dobDate = el;
+        if (/month|^mm$/.test(h)) slots.dobMonth = el;
+        else if (/year|yyyy|^yy$/.test(h)) slots.dobYear = el;
+        else slots.dobDay = el;   // day select, day input or a single date field
         continue;
       }
-      if (/day\\s*(of)?\\s*(birth)?|^dob.?d$/.test(h) && type === 'select') { slots.dobDay = el; continue; }
+      if (type === 'select' && /month|^mm$/.test(h)) { slots.dobMonth = el; continue; }
+      if (type === 'select' && /year|yyyy/.test(h)) { slots.dobYear = el; continue; }
+      if (type === 'select' && /day|^dd$/.test(h)) { slots.dobDay = el; continue; }
       if (/security|answer|mother|pet|city.?of|first.?pet/.test(h) && type !== 'select') { slots.answer = el; continue; }
     }
     return slots;
@@ -96,10 +97,14 @@ const PAGE_HELPERS = `
     const hasPass = slots.passNew.length || slots.passCur.length;
     const hasId = !!(slots.email || slots.username);
     if (!hasPass || !hasId) return 'none';
-    const page = (document.body?.innerText || '').slice(0, 4000).toLowerCase();
-    const signupish = /sign\\s?up|create (an )?account|register|get started|join/.test(page) || location.href.match(/signup|register|join/i);
-    if (slots.passNew.length >= 2 || slots.passNew.length >= 1 && signupish) return 'signup';
-    if (signupish && slots.passCur.length && hasId) return 'signup';
+    if (slots.passNew.length >= 2) return 'signup';
+    const passEl = slots.passNew[0]?.el || slots.passCur[0];
+    const formEl = passEl?.closest('form') || document.body;
+    const formText = ((formEl && formEl.innerText) || '').slice(0, 2000).toLowerCase();
+    const urlish = /signup|register|join|create/.test(location.href);
+    const formish = /sign\\s?up|create (an )?account|register|join/.test(formText);
+    if (slots.passNew.length >= 1 && (formish || urlish)) return 'signup';
+    if (formish && !/sign\\s?in|log\\s?in/.test(formText)) return 'signup';
     return 'login';
   };
   const capCount = () => document.querySelectorAll('iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"], .g-recaptcha, .h-captcha, [data-sitekey]').length;
@@ -119,8 +124,8 @@ export function detectScript() {
       hasEmail: !!slots.email,
       hasUsername: !!slots.username,
       email: idEl ? idEl.value || '' : '',
-      password: (kind === 'login' && passEl) ? passEl.value || '' : '',
-      password2: kind === 'login' && slots.passCur[1] ? slots.passCur[1].value || '' : '',
+      password: passEl ? passEl.value || '' : '',
+      password2: slots.passCur[1] ? slots.passCur[1].value || '' : '',
       captcha: !!slots.captcha || capCount() > 0,
       gender: !!slots.gender, dob: !!(slots.dobDay || slots.dobDate),
       terms: slots.terms.length
@@ -168,8 +173,11 @@ export function providerFillScript(v) {
     // date of birth
     const dob = v.dob || null; // {y, m, d}
     if (dob) {
-      if (slots.dobDate) { setVal(slots.dobDate, dob.y + '-' + String(dob.m).padStart(2, '0') + '-' + String(dob.d).padStart(2, '0')); filled.push('date of birth'); }
-      else {
+      const dayEl = slots.dobDay;
+      if (dayEl && dayEl.tagName === 'INPUT') {
+        setVal(dayEl, dob.y + '-' + String(dob.m).padStart(2, '0') + '-' + String(dob.d).padStart(2, '0'));
+        filled.push('date of birth');
+      } else {
         if (slots.dobDay) setSelect(slots.dobDay, String(dob.d).padStart(2, '0'), [String(dob.d), String(dob.d).padStart(2, '0')]) ? filled.push('birth day') : missed.push('birth day');
         if (slots.dobMonth) setSelect(slots.dobMonth, String(dob.m).padStart(2, '0'), [String(dob.m), String(dob.m).padStart(2, '0'), ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'][dob.m - 1]]) ? filled.push('birth month') : missed.push('birth month');
         if (slots.dobYear) setSelect(slots.dobYear, String(dob.y)) ? filled.push('birth year') : missed.push('birth year');

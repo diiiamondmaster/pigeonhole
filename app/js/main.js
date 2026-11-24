@@ -179,7 +179,7 @@ qs('#settingsBtn').addEventListener('click', () => settingsModal());
 qs('#logoBtn')?.addEventListener('click', () => settingsModal('about'));
 
 // ---------- dev scene runner (screenshot harness) ----------
-function runScene(payload) {
+async function runScene(payload) {
   const name = payload?.name;
   const wsId = S.getActiveWsId();
   if (name === 'wizard') import('./wizard.js').then(m => m.openWizard(wsId));
@@ -187,6 +187,27 @@ function runScene(payload) {
   else if (name === 'settings') settingsModal();
   else if (name === 'ws-settings') import('./modals.js').then(m => m.wsSettingsModal(wsId));
   else if (name === 'about') settingsModal('about');
+  else if (name === 'ntp') Tabs.navigate(wsId, `pigeonhole://newtab?ws=${wsId}`);
+  else if (name === 'error') Tabs.navigate(wsId, 'http://127.0.0.1:9/unreachable');
+  else if (name === 'collapsed') import('./sidebar.js').then(m => m.toggleSidebar());
+  else if (name === 'offer') {
+    // point the active tab at the local site playground to trigger the offer bar
+    Tabs.navigate(wsId, 'http://127.0.0.1:8123/form-playground.html');
+  } else if (name === 'many') {
+    for (let i = 0; i < 15; i++) await PH().workspaces.create({});
+    await S.refresh();
+    import('./sidebar.js').then(m => m.renderSidebar());
+  } else if (name === 'wizard-mock' || name === 'wizard-create') {
+    const created = await PH().workspaces.create({});
+    await S.refresh();
+    import('./sidebar.js').then(m => m.renderSidebar());
+    Tabs.switchWorkspace(created.id);
+    import('./wizard.js').then(m => m.driveMockFlow(created.id, 'http://127.0.0.1:8123/provider-mock.html', { hold: name === 'wizard-create' }));
+  } else if (name === 'wizard-provider') {
+    import('./wizard.js').then(m => m.openWizardAt(wsId, 'provider'));
+  } else if (name === 'settings-identity') {
+    settingsModal('identity');
+  }
 }
 
 boot().then(() => { try { window.pigeonhole.dev?.ready(); } catch { } })

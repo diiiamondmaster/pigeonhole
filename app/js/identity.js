@@ -53,6 +53,12 @@ async function pollPage() {
   if (busy) return;
   const wv = await activeWebview();
   if (!wv) return;
+  const wsId = S.getActiveWsId();
+  // the wizard owns filling while it is open on this workspace
+  try {
+    const { isWizardActiveFor } = await import('./wizard.js');
+    if (isWizardActiveFor(wsId)) return;
+  } catch { }
   busy = true;
   try {
     const d = await detectIn(wv);

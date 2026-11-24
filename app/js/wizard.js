@@ -88,6 +88,12 @@ export function closeWizard() {
   qs('#wizardPanel').classList.add('hidden');
 }
 
+// is the wizard panel open for this workspace? (the offer bar stays out of the way)
+export function isWizardActiveFor(wsId) {
+  if (qs('#wizardPanel').classList.contains('hidden')) return false;
+  return currentWsId === wsId;
+}
+
 function session() {
   return currentWsId ? sessions.get(currentWsId) || null : null;
 }
@@ -275,6 +281,15 @@ function stepIdentity(s) {
       el('label', { text: 'Domain' }),
       el('select', { class: 'input', onchange: (e) => { d.domain = e.target.value; } },
         prov.domains.map(dm => el('option', { value: dm, text: '@' + dm, selected: dm === (d.domain || prov.domains[0]) ? '' : null })))) : null,
+
+    s.providerId === 'other' ? el('div', { class: 'field' },
+      el('label', { text: 'Email domain (after the @)' }),
+      el('input', {
+        class: 'input mono', placeholder: 'the part after @ in your new address',
+        value: d.domain || '',
+        oninput: (e) => { d.domain = e.target.value.trim().toLowerCase().replace(/[^a-z0-9.-]/g, ''); }
+      }),
+      el('div', { class: 'hint', text: 'Type the domain the signup form will offer, so the saved identity matches the real address.' })) : null,
 
     el('div', { class: 'divider' }),
 
@@ -556,4 +571,42 @@ async function runFill(s, manual) {
     if (!manual) s.fillsLeft = Math.max(0, s.fillsLeft - 1);
     renderPanel();
   }
+}
+
+export function openWizardAt(wsId, step, mode = 'guided', providerId = 'proton') {
+  openWizard(wsId);
+  const s = session();
+  if (s) {
+    s.mode = mode;
+    if (mode === 'guided') { s.providerId = providerId; s.draft.domain = providerById(providerId)?.domains?.[0] || ''; }
+    s.step = step || s.step;
+    renderPanel();
+  }
+}
+
+// ---- dev-only scripted flow against a mock provider signup page ----
+export async function driveMockFlow(wsId, mockUrl, { hold = false } = {}) {
+  openWizard(wsId);
+  const s = session();
+  s.mode = 'guided';
+  s.providerId = 'other';
+  s.customUrl = mockUrl;
+  s.draft.base = 'tester';
+  s.draft.num = 7;
+  s.draft.padding = 3;
+  s.draft.pwMode = 'generate';
+  s.draft.domain = 'mockmail.com';
+  s.step = 'provider';
+  await enterCreate(s);
+  // wait for the auto-fill to happen
+  for (let i = 0; i < 30 && !s.fillReport; i++) await new Promise(r => setTimeout(r, 500));
+  console.log('[wizard-test] fillReport:', JSON.stringify(s.fillReport));
+  if (hold) { s.step = 'create'; renderPanel(); return { fill: s.fillReport }; }
+  s.created = true;
+  s.step = 'confirm';
+  renderPanel();
+  await saveIdentity(s);
+  const w = S.ws(wsId);
+  console.log('[wizard-test] identity saved:', w?.identity?.email, '| workspace name:', w?.name);
+  return { fill: s.fillReport, email: w?.identity?.email };
 }

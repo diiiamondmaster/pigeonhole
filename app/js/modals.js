@@ -166,18 +166,15 @@ export async function wsSettingsModal(wsId) {
 
   // network visual (proxy routing lands in v1.1)
   const netSection = section('Network',
-    el('div', { class: 'row', style: { marginBottom: '10px' } },
-      el('span', { class: 'pill muted', text: 'v1.1' }),
-      el('span', { style: { fontSize: '11.5px', color: 'var(--text-faint)' }, text: 'Per-workspace proxy routing is on the roadmap - nothing is routed through a proxy in this build.' })),
-    el('div', { class: 'net-chip direct', style: { marginBottom: '10px' } }, el('span', { class: 'dot' }), el('span', { text: 'Direct connection (your own IP)' })),
-    el('div', { class: 'seg', style: { opacity: 0.5 } },
-      el('button', { class: 'on', text: 'Direct', disabled: '' }),
-      el('button', { text: 'SOCKS5 proxy', disabled: '', title: 'Coming in v1.1' })),
-    el('div', { style: { marginTop: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', opacity: 0.5 } },
-      el('input', { class: 'input', placeholder: 'proxy host', disabled: '' }),
-      el('input', { class: 'input', placeholder: 'port', disabled: '' }),
-      el('input', { class: 'input', placeholder: 'username', disabled: '' }),
-      el('input', { class: 'input', type: 'password', placeholder: 'password', disabled: '' })),
+    el('div', { class: 'row', style: { marginBottom: '12px' } },
+      el('span', { class: 'net-chip direct' }, el('span', { class: 'dot' }), el('span', { text: 'Direct connection - your own IP' })),
+      el('span', { class: 'pill muted', text: 'v1.1 roadmap' })),
+    el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', lineHeight: '1.5', marginBottom: '10px' }, text: 'Each workspace will be routable through its own SOCKS5/HTTP proxy so accounts never share an IP. The fields below are a preview - routing is not active in this build.' }),
+    el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', opacity: 0.45, pointerEvents: 'none' } },
+      el('input', { class: 'input', placeholder: 'proxy host (e.g. nl.proxy.io)', disabled: '' }),
+      el('input', { class: 'input', placeholder: 'port (e.g. 1080)', disabled: '' }),
+      el('input', { class: 'input', placeholder: 'username (optional)', disabled: '' }),
+      el('input', { class: 'input', type: 'password', placeholder: 'password (optional)', disabled: '' })),
     el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'Follow the Releases page for the 1.1 update.' }));
 
   openModal({

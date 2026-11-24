@@ -227,10 +227,10 @@ img { -webkit-user-drag: none; }
   transition: background 0.1s ease;
 }
 .tab:hover { background: var(--surface); }
-.tab.active { background: var(--surface); color: var(--text); }
+.tab.active { background: var(--surface-2); color: var(--text); font-weight: 550; }
 .tab.active::after {
   content: ""; position: absolute; left: 0; right: 0; top: 0;
-  height: 2px; background: var(--accent);
+  height: 2.5px; background: var(--accent);
 }
 .tab .fav { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--text-faint); }
 .tab .fav img { width: 16px; height: 16px; }
