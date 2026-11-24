@@ -6,10 +6,15 @@ export const qsa = (sel, root = document) => [...root.querySelectorAll(sel)];
 export function el(tag, attrs = {}, ...children) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
-    if (v == null) continue;
+    // Boolean-attribute contract: presence = on, absence = off.
+    // `disabled: false` / `checked: false` must NOT serialize into
+    // setAttribute('disabled', 'false') - a present attribute is truthy
+    // in HTML semantics and would lock the control forever.
+    if (v == null || v === false) continue;
     if (k === 'class') n.className = v;
     else if (k === 'html') n.innerHTML = v;
     else if (k === 'text') n.textContent = v;
+    else if (k === 'value') n.value = v;
     else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
     else if (k === 'style' && typeof v === 'object') {
       for (const [sk, sv] of Object.entries(v)) {

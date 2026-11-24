@@ -33,8 +33,8 @@ export const PROVIDERS = [
     phone: 'none',
     humanCheck: 'CAPTCHA',
     free: '1 GB storage, 1 calendar',
-    notes: 'German privacy provider (formerly Tutanota), since 2011. Choose the Free plan. Signups from some networks are held for a short activation check.',
-    domains: ['tuta.com', 'tutanota.com', 'tuta.io'],
+    notes: 'German privacy provider (formerly Tutanota), since 2011. The signup first shows a plan picker - pick Free and continue, the address form comes next. Signups from some networks are held for a short activation check.',
+    domains: ['tuta.com', 'tutanota.com', 'tuta.io', 'tutamail.com', 'tutanota.de', 'keemail.me'],
     successPatterns: [/app\.tuta\.com\/(mail|wizard|login)/i, /app\.tuta\.com\/[a-z]{2}\/mail/i],
     recommended: true
   },

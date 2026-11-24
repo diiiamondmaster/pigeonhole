@@ -23,8 +23,8 @@
   <form id="signup" action="/created" method="post">
     <label for="desired">Desired email address</label>
     <div class="row">
-      <input id="desired" name="desiredUsername" type="text" placeholder="yourname" autocomplete="off">
-      <select id="dom" name="emailDomain">
+      <input id="emailLocal" name="desiredUsername" type="text" placeholder="yourname" autocomplete="off">
+      <select id="domain" name="emailDomain">
         <option value="mockmail.com">@mockmail.com</option>
         <option value="mockbox.net">@mockbox.net</option>
       </select>
@@ -41,20 +41,8 @@
       </div>
     </div>
 
-    <div class="row">
-      <div>
-        <label for="bd">Date of birth</label>
-        <select id="bd" name="birthDay"><option value="">Day</option></select>
-      </div>
-      <div>
-        <label for="bm">&nbsp;</label>
-        <select id="bm" name="birthMonth"><option value="">Month</option></select>
-      </div>
-      <div>
-        <label for="by">&nbsp;</label>
-        <select id="by" name="birthYear"><option value="">Year</option></select>
-      </div>
-    </div>
+    <label for="dob">Date of birth</label>
+    <input id="dob" name="dateOfBirth" type="date">
 
     <label for="g">Gender</label>
     <select id="g" name="gender">
@@ -80,19 +68,15 @@
       <input id="cap" name="captchaCode" type="text" placeholder="captcha">
     </div>
 
-    <label class="check"><input type="checkbox" id="tos" name="acceptTerms"> I accept the Terms of Service and Privacy Policy</label>
+    <label class="check"><input type="checkbox" id="terms" name="acceptTerms"> I accept the Terms of Service and Privacy Policy</label>
 
     <button type="submit">Create account</button>
   </form>
 
   <script>
-    for (let i = 1; i <= 31; i++) bd.add(new Option(String(i).padStart(2, '0')));
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    months.forEach((m, i) => bm.add(new Option(m, String(i + 1).padStart(2, '0'))));
-    for (let y = 2026; y >= 1950; y--) by.add(new Option(String(y)));
     document.getElementById('signup').addEventListener('submit', e => {
       e.preventDefault();
-      document.body.innerHTML = '<h1>Welcome to your inbox!</h1><p>You are signed in as ' + desired.value + '@' + dom.value + '</p>';
+      document.body.innerHTML = '<h1>Welcome to your inbox!</h1><p>You are signed in as ' + emailLocal.value + '@' + domain.value + '</p>';
     });
   </script>
 </body>

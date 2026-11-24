@@ -60,8 +60,6 @@ export function nextNumberFor(base) {
 
 // ------------------------------------------------------------------
 export function openWizard(wsId) {
-  const w = S.ws(wsId);
-  if (!w) return;
   currentWsId = wsId;
   if (!sessions.has(wsId)) {
     const st = S.settings();
@@ -78,10 +76,16 @@ export function openWizard(wsId) {
         pwCustom: '', pwGen: genPassword(st.pwLength || 16, st.pwSymbols !== false),
         extras
       },
-      fillsLeft: 2, fillReport: null, wizardTabId: null, created: false, providerName: ''
+      // multi-step signup pages need several attempts: the budget only counts
+      // fills that actually filled something, so dead screens burn nothing
+      fillsLeft: 8, fillReport: null, wizardTabId: null, created: false, providerName: ''
     });
   }
   renderPanel();
+  if (!S.ws(wsId)) {
+    // stale snapshot (workspace just created) - heal instead of silently no-op
+    S.refresh().then(() => { if (sessions.has(wsId)) renderPanel(); }).catch(() => { });
+  }
   if (!pollTimer) pollTimer = setInterval(wizardPoll, 1500);
 }
 
@@ -124,7 +128,7 @@ function renderPanel() {
     el('div', { class: 'panel-head' },
       el('div', { class: 'grow' },
         el('h2', { text: 'Email setup' }),
-        el('div', { class: 'sub', text: `Workspace ${w.num} · ${w.name}` })),
+        el('div', { class: 'sub', text: w ? `Workspace ${w.num} · ${w.name}` : 'New workspace' })),
       el('button', { class: 'icon-btn sm', html: icon('close', 15), title: 'Close (you can resume later)', onclick: closeWizard })
     ),
     stepsBar(s),
@@ -173,6 +177,16 @@ function choiceCard(ic, title, sub, on, click) {
 
 // ---------------- step 2: provider ----------------
 function stepProvider(s) {
+  // Continue unlocks live while the custom URL is being typed, not only on
+  // the re-renders triggered by card clicks.
+  const gate = () => !s.providerId || (s.providerId === 'other' && !/^https?:\/\//.test(s.customUrl || ''));
+  const continueBtn = el('button', {
+    class: 'btn btn-primary', text: 'Continue',
+    disabled: gate(),
+    onclick: () => { s.step = 'identity'; renderPanel(); }
+  });
+  const syncContinue = () => { continueBtn.disabled = gate(); };
+
   const cards = PROVIDERS.map(p => {
     const badge = PHONE_LABEL[p.phone];
     return el('div', {
@@ -198,8 +212,8 @@ function stepProvider(s) {
     el('input', {
       class: 'input', type: 'url', placeholder: 'https://signup.example.com/…',
       value: s.customUrl, style: { marginTop: '8px' },
-      oninput: (e) => { s.customUrl = e.target.value.trim(); },
-      onclick: (e) => { e.stopPropagation(); s.providerId = 'other'; renderPanel(); }
+      oninput: (e) => { s.customUrl = e.target.value.trim(); if (s.providerId !== 'other') { s.providerId = 'other'; renderPanel(); } else syncContinue(); },
+      onclick: (e) => { e.stopPropagation(); if (s.providerId !== 'other') { s.providerId = 'other'; renderPanel(); } }
     }),
     el('div', { class: 'pc-note', style: { marginTop: '6px' }, text: 'Bring any signup URL. Autofill does its best on unknown forms; you can always type the rest by hand.' }));
 
@@ -210,11 +224,7 @@ function stepProvider(s) {
     el('div', { class: 'row', style: { marginTop: '14px' } },
       el('button', { class: 'btn btn-ghost', html: icon('chevL', 14) + ' Back', onclick: () => { s.step = 'path'; renderPanel(); } }),
       el('span', { class: 'grow' }),
-      el('button', {
-        class: 'btn btn-primary', text: 'Continue',
-        disabled: !s.providerId || (s.providerId === 'other' && !/^https?:\/\//.test(s.customUrl || '')),
-        onclick: () => { s.step = 'identity'; renderPanel(); }
-      })));
+      continueBtn));
 }
 
 // ---------------- step 3: identity ----------------
@@ -228,11 +238,46 @@ function stepIdentity(s) {
   const pwLabel = { shared: 'Shared password', generate: 'Generated', custom: 'Custom' }[d.pwMode];
   const str = strength(pwShown || 'sharedpW!1234');
 
+  // Live elements updated while the user types, so the email preview, the
+  // strength meter and the primary button never go stale. (A full re-render
+  // on every keystroke would rebuild the DOM and drop input focus.)
+  const emailEl = el('div', { class: 'id-email', html: previewHtml(preview) });
+  const meterEl = el('div', { class: 'meter' }, el('i', { class: str.cls, style: { width: str.pct + '%' } }));
+  const meterHintEl = el('div', { class: 'hint', text: `Strength: ${str.label}` });
+  const pwLenEl = el('span', { text: pwLabel + ' · ' + (d.pwMode === 'shared' ? 'from Settings' : (pwShown || '').length + ' chars') });
+  const primaryBtn = el('button', {
+    class: 'btn btn-primary', text: 'Open signup page',
+    disabled: gate(),
+    onclick: () => enterCreate(s)
+  });
+  const sync = () => {
+    const prev = emailPreview(s);
+    emailEl.innerHTML = previewHtml(prev);
+    primaryBtn.disabled = gate();
+    pwLenEl.textContent = pwLabel + ' · ' + (d.pwMode === 'shared' ? 'from Settings' : ((d.pwMode === 'generate' ? d.pwGen : d.pwCustom) || '').length + ' chars');
+    const pw = d.pwMode === 'shared' ? null : (d.pwMode === 'generate' ? d.pwGen : d.pwCustom);
+    if (pw) {
+      const st2 = strength(pw);
+      meterEl.style.display = '';
+      const bar = meterEl.firstChild;
+      bar.className = st2.cls; bar.style.width = st2.pct + '%';
+      meterHintEl.textContent = `Strength: ${st2.label}`;
+    } else { meterEl.style.display = 'none'; meterHintEl.textContent = ''; }
+  };
+  function previewHtml(p) {
+    return p ? `${escapeHtml(p.split('@')[0])}<span style="color:var(--text-faint)">@${escapeHtml(p.split('@')[1] || '')}</span>` : '<span style="color:var(--text-faint)">your-address@…</span>';
+  }
+  function gate() {
+    const prev = emailPreview(s);
+    return !prev || (d.pwMode === 'shared' && !st.hasSharedPassword) || (d.pwMode === 'custom' && !d.pwCustom);
+  }
+  sync();   // normalize meter/hint visibility for the initial state
+
   const body = el('div', {},
     el('div', { class: 'identity-card' },
-      el('div', { class: 'id-email', html: preview ? `${escapeHtml(preview.split('@')[0])}<span style="color:var(--text-faint)">@${escapeHtml(preview.split('@')[1] || '')}</span>` : '<span style="color:var(--text-faint)">your-address@…</span>' }),
+      emailEl,
       el('div', { class: 'id-row' },
-        el('span', { text: pwLabel + ' · ' + (d.pwMode === 'shared' ? 'from Settings' : (pwShown || '').length + ' chars') }),
+        pwLenEl,
         el('span', { class: 'pill muted', text: prov ? prov.name : 'Custom provider' }))),
     el('div', { style: { height: '14px' } }),
 
@@ -249,38 +294,38 @@ function stepIdentity(s) {
       el('div', { class: 'row', style: { gap: '8px', marginBottom: '8px' } },
         el('div', { class: 'field grow', style: { marginBottom: '0' } },
           el('label', { text: 'Base handle' }),
-          el('input', { class: 'input', value: d.base, placeholder: 'your usual handle', oninput: (e) => { d.base = e.target.value.trim().replace(/[^a-zA-Z0-9._-]/g, ''); } })),
+          el('input', { class: 'input', value: d.base, placeholder: 'your usual handle', oninput: (e) => { d.base = e.target.value.trim().replace(/[^a-zA-Z0-9._-]/g, ''); sync(); } })),
         el('div', { class: 'field', style: { marginBottom: '0', width: '92px' } },
           el('label', { text: 'Number' }),
-          el('input', { class: 'input', type: 'number', min: 1, value: d.num, oninput: (e) => { d.num = Math.max(1, parseInt(e.target.value) || 1); } }))),
+          el('input', { class: 'input', type: 'number', min: 1, value: d.num, oninput: (e) => { d.num = Math.max(1, parseInt(e.target.value) || 1); sync(); } }))),
       el('div', { class: 'row', style: { gap: '8px' } },
         el('div', { class: 'field', style: { marginBottom: '0' } },
           el('label', { text: 'Zero padding' }),
           el('div', { class: 'seg' },
-            [1, 2, 3, 4].map(p2 => segBtn('p' + p2, 'p' + p2.replace('p', ''), 'p' + d.padding, () => { d.padding = p2; renderPanel(); })))) ,
+            [1, 2, 3, 4].map(p2 => segBtn('p' + p2, String(p2), 'p' + d.padding, () => { d.padding = p2; renderPanel(); })))),
         el('button', { class: 'btn btn-ghost btn-sm', style: { alignSelf: 'flex-end' }, html: icon('dice', 13) + ' Next number', title: 'Jump to the next free number for this base', onclick: () => { d.num = nextNumberFor(d.base) || d.num; renderPanel(); } })),
-      el('div', { class: 'hint', text: `Example: ${d.base || 'yourhandle'}${zeroPad(d.num || 1, d.padding)}@${d.domain || 'provider'}` })
+      exampleHint(d)
     ) : null,
 
     d.mode === 'human' ? el('div', { class: 'row', style: { gap: '8px' } },
-      nameField('First name', d.first, (v) => { d.first = v; }, 'first'),
-      nameField('Last name', d.last, (v) => { d.last = v; }, 'last'),
+      nameField('First name', d.first, (v) => { d.first = v; sync(); }, 'first'),
+      nameField('Last name', d.last, (v) => { d.last = v; sync(); }, 'last'),
       el('button', { class: 'btn btn-ghost btn-sm', style: { alignSelf: 'flex-end' }, html: icon('dice', 13), title: 'New name', onclick: () => { const e2 = genExtras(); d.first = e2.first; d.last = e2.last; renderPanel(); } })) : null,
 
     d.mode === 'words' ? el('div', { class: 'row', style: { gap: '8px' } },
       el('div', { class: 'field grow', style: { marginBottom: '0' } },
         el('label', { text: 'Word' }),
-        el('input', { class: 'input', value: d.word, oninput: (e) => { d.word = e.target.value.trim().toLowerCase().replace(/[^a-z0-9]/g, ''); } })),
+        el('input', { class: 'input', value: d.word, oninput: (e) => { d.word = e.target.value.trim().toLowerCase().replace(/[^a-z0-9]/g, ''); sync(); } })),
       el('button', { class: 'btn btn-ghost btn-sm', style: { alignSelf: 'flex-end' }, html: icon('dice', 13), title: 'New word', onclick: () => { d.word = pick(WORDS); renderPanel(); } })) : null,
 
     d.mode === 'custom' ? el('div', { class: 'field' },
       el('label', { text: 'Local part (before the @)' }),
-      el('input', { class: 'input mono', value: d.customLocal, placeholder: 'anything-you-like', oninput: (e) => { d.customLocal = e.target.value.trim().replace(/[^a-zA-Z0-9._-]/g, ''); } })) : null,
+      el('input', { class: 'input mono', value: d.customLocal, placeholder: 'anything-you-like', oninput: (e) => { d.customLocal = e.target.value.trim().replace(/[^a-zA-Z0-9._-]/g, ''); sync(); } })) : null,
 
     // domain
     prov && prov.domains.length > 1 ? el('div', { class: 'field' },
       el('label', { text: 'Domain' }),
-      el('select', { class: 'input', onchange: (e) => { d.domain = e.target.value; } },
+      el('select', { class: 'input', onchange: (e) => { d.domain = e.target.value; sync(); } },
         prov.domains.map(dm => el('option', { value: dm, text: '@' + dm, selected: dm === (d.domain || prov.domains[0]) ? '' : null })))) : null,
 
     s.providerId === 'other' ? el('div', { class: 'field' },
@@ -288,7 +333,7 @@ function stepIdentity(s) {
       el('input', {
         class: 'input mono', placeholder: 'the part after @ in your new address',
         value: d.domain || '',
-        oninput: (e) => { d.domain = e.target.value.trim().toLowerCase().replace(/[^a-z0-9.-]/g, ''); }
+        oninput: (e) => { d.domain = e.target.value.trim().toLowerCase().replace(/[^a-z0-9.-]/g, ''); sync(); }
       }),
       el('div', { class: 'hint', text: 'Type the domain the signup form will offer, so the saved identity matches the real address.' })) : null,
 
@@ -312,10 +357,10 @@ function stepIdentity(s) {
             el('button', { class: 'btn btn-sm', html: icon('dice', 13), title: 'New password', onclick: () => { d.pwGen = genPassword(S.settings().pwLength || 16, S.settings().pwSymbols !== false); renderPanel(); } }))
         : null,
       d.pwMode === 'custom'
-        ? el('input', { class: 'input mono', type: 'password', placeholder: 'Type a password', value: d.pwCustom, oninput: (e) => { d.pwCustom = e.target.value; } })
+        ? el('input', { class: 'input mono', type: 'password', placeholder: 'Type a password', value: d.pwCustom, oninput: (e) => { d.pwCustom = e.target.value; sync(); } })
         : null,
-      pwShown ? el('div', { class: 'meter' }, el('i', { class: str.cls, style: { width: str.pct + '%' } })) : null,
-      pwShown ? el('div', { class: 'hint', text: `Strength: ${str.label}` }) : null),
+      meterEl,
+      meterHintEl),
 
     el('details', { style: { marginTop: '4px' } },
       el('summary', { style: { fontSize: '11.5px', color: 'var(--text-faint)', cursor: 'pointer', marginBottom: '8px' }, text: 'Extra details (for provider forms that ask)' }),
@@ -334,13 +379,14 @@ function stepIdentity(s) {
     el('div', { class: 'row', style: { marginTop: '16px' } },
       el('button', { class: 'btn btn-ghost', html: icon('chevL', 14) + ' Back', onclick: () => { s.step = 'provider'; renderPanel(); } }),
       el('span', { class: 'grow' }),
-      el('button', {
-        class: 'btn btn-primary', text: 'Open signup page',
-        disabled: !preview || (d.pwMode === 'shared' && !st.hasSharedPassword) || (d.pwMode === 'custom' && !d.pwCustom),
-        onclick: () => enterCreate(s)
-      }))
+      primaryBtn)
   );
   return body;
+}
+
+// the numbered-mode example line, kept fresh by sync-driven re-renders
+function exampleHint(d) {
+  return el('div', { class: 'hint', text: `Example: ${d.base || 'yourhandle'}${zeroPad(d.num || 1, d.padding)}@${d.domain || 'provider'}` });
 }
 
 function nameField(label, value, oninput, key) {
@@ -363,7 +409,7 @@ async function enterCreate(s) {
   const url = s.providerId === 'other' ? s.customUrl : prov.signupUrl;
   s.providerName = prov ? prov.name : 'Custom provider';
   s.step = 'create';
-  s.fillsLeft = 2;
+  s.fillsLeft = 8;
   s.fillReport = null;
   // open the signup page in this workspace (reuse the current tab if it's on the new tab page)
   const wsId = s.wsId;
@@ -388,17 +434,24 @@ function stepCreate(s) {
     checkItem(s.pageLoaded, s.pageLoaded ? '' : 'current',
       'Open the signup page', `${prov ? prov.name : 'Custom'} - ${url.replace(/^https?:\/\//, '').slice(0, 48)}…`),
     checkItem(!!s.fillReport, s.fillReport ? '' : (s.pageLoaded ? 'current' : ''),
-      'Autofill the form', report
-        ? (report.ok
-          ? `Filled ${report.filled.join(', ') || 'nothing'}${report.missed.length ? ' - not found: ' + report.missed.join(', ') : ''}${report.captcha ? ' - CAPTCHA is left for you' : ''}`
-          : 'Could not read this form - fill it by hand')
-        : 'Runs automatically as soon as the form appears. You can also fill manually.'),
+      'Autofill the form', (() => {
+        if (!report) {
+          return 'Modern providers show a plan picker first - pick Free and continue. Filling starts the moment the address form appears.';
+        }
+        if (!report.ok) return 'Could not read this form - fill it by hand';
+        const bits = [];
+        if (report.filled?.length) bits.push(`Filled ${report.filled.join(', ')}`);
+        if (report.missed?.length) bits.push(`not found: ${report.missed.join(', ')}`);
+        if (report.notes?.length) bits.push(report.notes.join(' · '));
+        if (report.captcha) bits.push('CAPTCHA is left for you');
+        return bits.join(' - ') || 'Nothing to fill yet';
+      })()),
     checkItem(s.created, s.created ? '' : 'current',
       'Solve the CAPTCHA and submit', `Human check: ${prov?.humanCheck || 'unknown'}. Pigeonhole never touches CAPTCHAs.`),
   ];
 
   return el('div', {},
-    el('div', { class: 'hint', style: { marginBottom: '10px' }, text: `Step ${s.step === 'create' ? 4 : 5} - Pigeonhole watches this tab and fills the form; the CAPTCHA and the final click are yours.` }),
+    el('div', { class: 'hint', style: { marginBottom: '10px' }, text: 'Pigeonhole watches this tab and fills every field it can as the form appears; the CAPTCHA and the final click are yours.' }),
     el('ul', { class: 'checklist' }, items),
     el('div', { class: 'row', style: { marginTop: '12px', flexWrap: 'wrap', gap: '8px' } },
       el('button', { class: 'btn btn-sm', html: icon('wand', 13) + ' Fill again', onclick: () => runFill(s, true) }),
@@ -488,32 +541,37 @@ async function saveIdentity(s) {
 
 // ---------------- existing-email path ----------------
 function stepExisting(s) {
+  // Continue must unlock while the user types - the gate is recomputed live
+  // instead of being baked in at render time (where it would stay disabled).
+  const gate = () => !/.+@.+\..+/.test(s.draft.existingEmail || '') || !(s.draft.existingPw || '').length;
+  const sync = (btn) => { btn.disabled = gate(); };
+  const continueBtn = el('button', {
+    class: 'btn btn-primary', text: 'Continue',
+    disabled: gate(),
+    onclick: () => {
+      s.draft.pwMode = 'custom';
+      s.draft.pwCustom = s.draft.existingPw;
+      s.draft.confirmLocal = s.draft.existingEmail.split('@')[0];
+      s.draft.domainOverride = s.draft.existingEmail.split('@')[1];
+      s.providerName = 'Existing';
+      s.step = 'confirm';
+      renderPanel();
+    }
+  });
   return el('div', {},
     el('div', { class: 'field' },
       el('label', { text: 'Email address' }),
-      el('input', { class: 'input mono', type: 'email', placeholder: 'name@provider.com', oninput: (e) => { s.draft.existingEmail = e.target.value.trim(); } })),
+      el('input', { class: 'input mono', type: 'email', placeholder: 'name@provider.com', oninput: (e) => { s.draft.existingEmail = e.target.value.trim(); sync(continueBtn); } })),
     el('div', { class: 'field' },
       el('label', { text: 'Password' }),
-      el('input', { class: 'input mono', type: 'password', placeholder: 'Mailbox password', oninput: (e) => { s.draft.existingPw = e.target.value; } })),
+      el('input', { class: 'input mono', type: 'password', placeholder: 'Mailbox password', oninput: (e) => { s.draft.existingPw = e.target.value; sync(continueBtn); } })),
     el('div', { class: 'field' },
       el('label', { text: 'Display name (optional)' }),
       el('input', { class: 'input', oninput: (e) => { s.draft.displayName = e.target.value; } })),
     el('div', { class: 'row' },
       el('button', { class: 'btn btn-ghost', html: icon('chevL', 14) + ' Back', onclick: () => { s.step = 'path'; renderPanel(); } }),
       el('span', { class: 'grow' }),
-      el('button', {
-        class: 'btn btn-primary', text: 'Continue',
-        disabled: !/.+@.+\..+/.test(s.draft.existingEmail || '') || !(s.draft.existingPw || '').length,
-        onclick: () => {
-          s.draft.pwMode = 'custom';
-          s.draft.pwCustom = s.draft.existingPw;
-          s.draft.confirmLocal = s.draft.existingEmail.split('@')[0];
-          s.draft.domainOverride = s.draft.existingEmail.split('@')[1];
-          s.providerName = 'Existing';
-          s.step = 'confirm';
-          renderPanel();
-        }
-      })));
+      continueBtn));
 }
 
 // ---------------- wizard poll loop ----------------
@@ -528,10 +586,14 @@ async function wizardPoll() {
   const wv = Tabs.webviewOf(wsId, tab);
   if (!wv || !tab.url || tab.url.startsWith('pigeonhole://')) return;
 
-  // auto-fill when the form shows up (until the budget runs out)
+  // auto-fill whenever a recognizable form shows up (until the budget runs
+  // out). Multi-step flows are covered: dead screens (plan pickers) never
+  // consume the budget, and each new step that shows empty fields is filled.
+  // A screen whose identity field already holds OUR value is done - no loops.
   if (s.fillsLeft > 0 && S.settings().autoFillOnLoad !== false) {
     const d = await detectIn(wv);
-    if (d && d.kind !== 'none' && !d.password) {
+    if (d && !d.error && (d.hasEmail || d.hasUsername || d.hasPass) && !d.password
+      && !((d.hasEmail || d.hasUsername) && d.email && d.emailOurs && !d.hasPass)) {
       await runFill(s, false);
     }
   }
@@ -563,10 +625,18 @@ async function runFill(s, manual) {
     first: d.extras.first, last: d.extras.last,
     dob: d.extras.dob, gender: d.extras.gender, answer: d.extras.answer
   });
-  if (result) {
-    s.fillReport = result;
-    if (!manual) s.fillsLeft = Math.max(0, s.fillsLeft - 1);
-    renderPanel();
+  // always show what happened - silence reads as "it never even tried"
+  s.fillReport = result || { ok: false, error: 'script blocked' };
+  if (!manual && result && result.filled && result.filled.length) {
+    s.fillsLeft = Math.max(0, s.fillsLeft - 1);   // only successful fills cost
+  }
+  renderPanel();
+  if (manual) {
+    toast({
+      title: result?.ok && result.filled?.length ? 'Filled ' + result.filled.join(', ') : 'Nothing new to fill',
+      sub: [result?.notes?.join(' · '), result?.captcha ? 'CAPTCHA stays yours' : ''].filter(Boolean).join(' · '),
+      ic: 'wand', type: 'info', timeout: 4200
+    });
   }
 }
 
@@ -582,17 +652,20 @@ export function openWizardAt(wsId, step, mode = 'guided', providerId = 'proton')
 }
 
 // ---- dev-only scripted flow against a mock provider signup page ----
-export async function driveMockFlow(wsId, mockUrl, { hold = false } = {}) {
+export async function driveMockFlow(wsId, mockUrl, { hold = false, domain = 'mockmail.com', base = 'tester', num = 7 } = {}) {
+  // the real UI always lands the user on the new workspace before the wizard
+  // runs; a hidden webview reports 0x0 rects and the scan finds nothing
+  Tabs.switchWorkspace(wsId);
   openWizard(wsId);
   const s = session();
   s.mode = 'guided';
   s.providerId = 'other';
   s.customUrl = mockUrl;
-  s.draft.base = 'tester';
-  s.draft.num = 7;
+  s.draft.base = base;
+  s.draft.num = num;
   s.draft.padding = 3;
   s.draft.pwMode = 'generate';
-  s.draft.domain = 'mockmail.com';
+  s.draft.domain = domain;
   s.step = 'provider';
   await enterCreate(s);
   // wait for the auto-fill to happen

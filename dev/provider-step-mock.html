@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Two-step Provider Mock</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 420px; margin: 40px auto; color: #222; }
+  h1 { font-size: 20px; }
+  input { width: 100%; padding: 10px; box-sizing: border-box; margin: 8px 0; }
+  button { padding: 11px 18px; font-size: 15px; background: #7c3aed; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+  .cb { font-size: 13px; margin: 14px 0; }
+</style>
+</head>
+<body>
+  <h1>Create your mailbox</h1>
+
+  <div id="step1">
+    <p>Step 1 of 2 - choose your address</p>
+    <input id="u" aria-label="User name" autocomplete="off" placeholder="your name">
+    <button type="button" id="next">Next</button>
+  </div>
+
+  <div id="step2" hidden>
+    <p>Step 2 of 2 - set your password</p>
+    <input id="pw" type="password" aria-label="Password" autocomplete="new-password">
+    <input id="pw2" type="password" aria-label="Repeat password" autocomplete="new-password">
+    <div class="cb"><input type="checkbox" id="terms"> I accept the terms and privacy policy</div>
+    <button type="submit" id="submit">Create account</button>
+  </div>
+
+  <script>
+    document.getElementById('next').addEventListener('click', () => {
+      document.getElementById('step1').hidden = true;
+      document.getElementById('step2').hidden = false;
+    });
+    document.getElementById('submit').addEventListener('click', () => {
+      document.body.innerHTML = '<h1>Welcome!</h1>';
+    });
+  </script>
+</body>
+</html>

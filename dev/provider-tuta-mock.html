@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tuta Mock - plan picker then address form</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 460px; margin: 30px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 20px; }
+  .plans { display: flex; gap: 10px; margin: 16px 0; }
+  .plan { flex: 1; border: 2px solid #ddd; border-radius: 10px; padding: 14px; cursor: pointer; }
+  .plan.sel { border-color: #7c3aed; background: #f5f0ff; }
+  .plan b { display: block; font-size: 15px; }
+  .plan span { font-size: 12px; color: #666; }
+  button.go { padding: 11px 18px; font-size: 15px; background: #7c3aed; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+  #form-step { margin-top: 18px; }
+  .dd { position: relative; display: inline-block; }
+  .dd button { padding: 9px 14px; font-size: 14px; background: #fff; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+  .dd ul { position: absolute; top: 110%; left: 0; margin: 0; padding: 6px 0; list-style: none; background: #fff; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.15); min-width: 150px; z-index: 5; }
+  .dd li { padding: 7px 14px; cursor: pointer; font-size: 13.5px; }
+  .dd li:hover { background: #f3f0ff; }
+  .addr { display: flex; gap: 8px; align-items: center; margin: 8px 0 14px; }
+  .addr input { flex: 1; padding: 10px; font-size: 15px; }
+  .pwrow { margin: 12px 0; }
+  .pwrow input { width: 100%; padding: 10px; font-size: 15px; box-sizing: border-box; }
+  .cb { margin: 14px 0; font-size: 13px; color: #333; }
+  .cb input { margin-right: 7px; }
+  .captcha { margin: 14px 0; padding: 12px; background: #f3f4f6; border-radius: 8px; font-size: 13px; }
+  .captcha input { margin-top: 6px; width: 160px; padding: 8px; }
+  button[type=submit] { margin-top: 12px; padding: 12px 20px; font-size: 15px; background: #7c3aed; color: #fff; border: 0; border-radius: 6px; }
+  button[type=submit]:disabled { background: #bbb; cursor: not-allowed; }
+  .step { border-top: 1px solid #eee; padding-top: 16px; }
+</style>
+</head>
+<body>
+  <h1>Create your Tuta address</h1>
+  <p>Free plan - 1 GB, no phone number needed.</p>
+
+  <div id="plan-step">
+    <h2>Choose your plan</h2>
+    <div class="plans">
+      <div class="plan" data-plan="free"><b>Free</b><span>1 GB, 1 calendar</span></div>
+      <div class="plan" data-plan="paid"><b>Rebel</b><span>&euro;1/month</span></div>
+    </div>
+    <button class="go" id="plan-continue" type="button">Continue</button>
+  </div>
+
+  <div id="form-step" hidden class="step">
+    <div class="addr">
+      <input id="u" aria-label="User name" autocomplete="off" placeholder="your name">
+      <div class="dd">
+        <button type="button" id="dd-open" aria-label="Choose domain" title="Domain">tuta.com</button>
+        <ul id="dd-list" hidden>
+          <li>tuta.com</li>
+          <li>tutanota.com</li>
+          <li>tuta.io</li>
+          <li>tutamail.com</li>
+          <li>tutanota.de</li>
+          <li>keemail.me</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="pwrow"><input id="pw" type="password" aria-label="Password" autocomplete="new-password"></div>
+    <div class="pwrow"><input id="pw2" type="password" aria-label="Repeat password" autocomplete="new-password"></div>
+
+    <div class="cb"><input type="checkbox" id="c1"> I declare that the information I have provided is correct and I am of legal age.</div>
+    <div class="cb"><input type="checkbox" id="c2"> I agree to the Terms and Conditions.</div>
+
+    <div class="captcha">
+      Captcha - type the word <b>boat</b>
+      <input id="cap" aria-label="captcha code" placeholder="captcha">
+    </div>
+
+    <button type="submit" id="submit" disabled>Create account</button>
+  </div>
+
+  <script>
+    // plan picker -> address form
+    document.querySelectorAll('.plan').forEach(p => p.addEventListener('click', () => {
+      document.querySelectorAll('.plan').forEach(q => q.classList.remove('sel'));
+      p.classList.add('sel');
+    }));
+    document.getElementById('plan-continue').addEventListener('click', () => {
+      document.getElementById('plan-step').hidden = true;
+      document.getElementById('form-step').hidden = false;
+    });
+
+    // custom (non-select) domain dropdown
+    const ddOpen = document.getElementById('dd-open');
+    const ddList = document.getElementById('dd-list');
+    ddOpen.addEventListener('click', () => { ddList.hidden = !ddList.hidden; });
+    ddList.querySelectorAll('li').forEach(li => li.addEventListener('click', () => {
+      ddOpen.textContent = li.textContent;
+      window.__phDomain = li.textContent;      // test hook
+      ddList.hidden = true;
+    }));
+
+    // submit unlocks only when everything the engine should fill is filled
+    const sub = document.getElementById('submit');
+    const sync = () => {
+      const ready = u.value && pw.value && pw2.value && c1.checked && c2.checked;
+      sub.disabled = !ready;
+      sub.textContent = ready ? 'Create account' : 'Fill every field first';
+    };
+    ['u', 'pw', 'pw2', 'cap'].forEach(id => document.getElementById(id).addEventListener('input', sync));
+    ['c1', 'c2'].forEach(id => document.getElementById(id).addEventListener('change', sync));
+  </script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shadow DOM Provider Mock</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 420px; margin: 40px auto; color: #222; }
+  #host { border: 1px solid #ddd; border-radius: 10px; padding: 18px; margin-top: 14px; }
+  h1 { font-size: 20px; }
+</style>
+</head>
+<body>
+  <h1>Create your mailbox</h1>
+  <p>This provider renders its whole signup form inside a shadow root.</p>
+  <div id="host"></div>
+  <script>
+    const host = document.getElementById('host');
+    const sr = host.attachShadow({ mode: 'open' });
+    sr.innerHTML = `
+      <form id="signup">
+        <label>Email address</label>
+        <input id="e" name="email" type="email" aria-label="Email address" autocomplete="off">
+        <label>Username</label>
+        <input id="u" name="username" aria-label="User name" autocomplete="off">
+        <label>New password</label>
+        <input id="pw" type="password" aria-label="New password" autocomplete="new-password">
+        <label>Confirm password</label>
+        <input id="pw2" type="password" aria-label="Confirm password" autocomplete="new-password">
+        <label><input id="terms" type="checkbox"> I accept the Terms of Service</label>
+        <button type="submit">Create</button>
+      </form>`;
+    sr.getElementById('signup').addEventListener('submit', e => {
+      e.preventDefault();
+      sr.innerHTML = '<h2>Welcome!</h2><p>Signed in as ' + sr.getElementById('u').value + '@' + 'mockmail.com' + '</p>';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iframe Provider Mock</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 480px; margin: 40px auto; color: #222; }
+  h1 { font-size: 20px; }
+  iframe { width: 100%; height: 320px; border: 1px solid #ddd; border-radius: 10px; margin-top: 14px; }
+  .top { margin: 14px 0; }
+  .top input { width: 100%; padding: 10px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+  <h1>Create your mailbox</h1>
+  <p>This provider renders the address form inside a same-origin iframe.</p>
+
+  <form id="top">
+    <div class="top">
+      <label>Password</label>
+      <input id="topw" type="password" aria-label="Password" autocomplete="new-password">
+    </div>
+  </form>
+
+  <iframe id="frame" title="signup form" srcdoc="
+    <!doctype html>
+    <html><body style='font: 13px system-ui, sans-serif; padding: 14px;'>
+      <h3>Choose your address</h3>
+      <form id='inner'>
+        <label>Username</label>
+        <input name='username' aria-label='User name' autocomplete='off'>
+        <label>Email address</label>
+        <input name='email' type='email' aria-label='Email address' autocomplete='off'>
+        <label>Confirm password</label>
+        <input name='password2' type='password' aria-label='Confirm password' autocomplete='new-password'>
+        <button type='submit'>Create</button>
+      </form>
+    </body></html>">
+  </iframe>
+
+  <script>
+    document.getElementById('top').addEventListener('submit', e => e.preventDefault());
+  </script>
+</body>
+</html>

@@ -156,7 +156,7 @@ export function toggleSidebar() {
 function promptModal(title, value = '') {
   return new Promise((resolve) => {
     const input = el('input', { class: 'input', value, style: { width: '100%' } });
-    openModal({
+    const handle = openModal({
       title, size: 'sm',
       body: el('div', {}, input),
       onClose: (v) => resolve(v ?? null),
@@ -166,7 +166,9 @@ function promptModal(title, value = '') {
       ]
     });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { const v = input.value; input.value = v; qs('#modalRoot').replaceChildren(); resolve(v); }
+      // Enter saves via the modal's own close path - replacing the whole
+      // modal root would also destroy any dialog stacked underneath
+      if (e.key === 'Enter') handle.close(input.value);
     });
     setTimeout(() => { input.focus(); input.select(); }, 30);
   });
