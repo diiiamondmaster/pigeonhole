@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.4 - 2026-11-25
+
+The "1.0.3 does not start" fix.
+
+- **Fixed the launch failure.** The 1.0.3 zip shipped a malformed `app.asar`
+  archive container: the header was written by a hand-rolled packer instead
+  of the official asar tool, and Electron rejects it on load - the exe
+  double-clicks to nothing, with no window and no error. (Not a code bug:
+  the 1.0.3 app code never even started.) The archive is now packed with
+  the official `@electron/asar` tool, and every build must boot the archive
+  under a real Electron runtime before it can ship.
+- Everything from 1.0.3 is included unchanged: self-update, the autofill
+  fixes, tab reordering.
+
 ## 1.0.3 - 2026-11-25
 
 The update that updates itself. Pigeonhole now pulls new versions from GitHub
