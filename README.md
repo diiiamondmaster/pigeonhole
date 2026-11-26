@@ -23,6 +23,14 @@ adds on top:
 - **Isolated workspaces.** Each workspace has its own cookies, cache,
   localStorage, IndexedDB and service workers. Nothing crosses over - you can
   be signed in to the same site in five workspaces at the same time.
+- **Per-workspace proxy routing (beta line).** Each workspace can exit through
+  its own SOCKS5/HTTP proxy, credentials stored encrypted - so accounts
+  never share an exit IP unless you want them to. Turn on *Beta updates*
+  (Settings → About) to ride the 1.1 line.
+- **Built-in extensions (beta line).** Small features that ship inside the app,
+  each switched on or off individually in Settings → Extensions: a spell
+  checker with right-click corrections, a tracker/ad-beacon shield, and a
+  history guard.
 - **Guided email setup.** Creating the Nth mailbox is a wizard: pick a provider
   that does not demand a phone number, generate a numbered address
   (`yourhandle001`, `yourhandle002`, ...), and let Pigeonhole fill the signup
@@ -37,7 +45,8 @@ adds on top:
 - **Self-updating.** On its own, the app checks GitHub Releases in the
   background, downloads the new build and applies it when you quit - your
   workspaces, vault and settings are never touched. A manual *Check for
-  updates* lives in Settings → About and in the Help menu.
+  updates* lives in Settings → About and in the Help menu. A *Beta updates*
+  toggle sits next to it for riding pre-release builds.
 
 | Browsing with several workspaces | The email setup wizard |
 | --- | --- |

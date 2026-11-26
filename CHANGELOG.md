@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.1.0-beta.1 - 2026-11-26 (beta channel)
+
+The 1.1 line opens: proxy routing, the extension system, and spell check. This
+is a beta: install it by turning on *Beta updates* in Settings → About.
+
+- **Per-workspace proxy routing.** Every workspace can now exit through its
+  own SOCKS5 or HTTP proxy: workspace settings → Network → *Route this
+  workspace through a proxy*. Credentials are optional and stored encrypted
+  like the vault; a bypass list is supported. Routing applies the moment you
+  save (the open tab reloads through the new path) and survives restarts. The
+  top bar and status bar show each workspace's route — a proxy-routed
+  workspace gets its own exit IP, so accounts no longer share one.
+- **Built-in extensions.** A new Settings → Extensions panel lists the
+  features that ship inside the app; each has its own on/off switch, takes
+  effect immediately and applies to every workspace. Three ship in this beta:
+  - **Spell Check** (on by default): misspelled words are underlined in text
+    boxes, and the right-click menu offers corrections plus *Add to
+    dictionary* — in web pages and in Pigeonhole's own inputs.
+  - **Tracker Shield** (on by default): blocks a conservative built-in list
+    of analytics/ad beacons in every workspace. Login SDKs are never blocked.
+  - **History Guard** (off by default): stops recording page visits into
+    per-workspace history; the address bar and new-tab page stop suggesting
+    them. Nothing already stored is deleted.
+- Everything from 1.0.6 is included: the beta-updates toggle and prerelease
+  semver ordering in the updater.
+
 ## 1.0.6 - 2026-11-26
 
 The beta channel.

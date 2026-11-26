@@ -1,17 +1,20 @@
 # Roadmap
 
-## v1.1 - per-workspace proxy routing
+## v1.1 - per-workspace proxy routing + extensions
 
-The headline gap in 1.0. Each workspace will be routable through its own
-SOCKS5/HTTP(S) proxy (`socks5://user:pass@host:port`), with:
+**In the 1.1.0-beta.1 pre-release (beta channel):**
 
-- credentials stored encrypted alongside the vault
+- per-workspace SOCKS5/HTTP proxy routing with optional credentials (stored
+  encrypted alongside the vault) and a bypass list
+- the built-in extension system (Settings → Extensions) with three
+  individually manageable extensions: Spell Check, Tracker Shield, History
+  Guard
+
+**Still planned for the v1.1 line:**
+
 - a connection test that shows the exit IP per workspace
 - a duplicate-IP warning when two workspaces share an exit address
 - status dots on the sidebar tiles
-
-The settings preview is already in the app (Workspace settings -> Network) so
-the workflow is visible before the plumbing lands.
 
 ## Later
 
