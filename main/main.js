@@ -17,6 +17,8 @@ const { buildAppMenu, buildGuestMenu } = require('./menus');
 const { attachDownloadHandlers, initDownloads } = require('./downloads');
 const { registerProtocol, attachProtocolToSession } = require('./protocol');
 const { createUpdater } = require('./updater');
+const extensions = require('./extensions');
+const { registerProxyAuthHandler, applyAllProxies } = require('./proxy');
 
 const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
@@ -53,6 +55,7 @@ function sessionForPartition(partition) {
   const ses = session.fromPartition(partition);
   attachProtocolToSession(ses);
   attachDownloadHandlers(ses);
+  extensions.applyToSession(ses);   // built-in extension wiring (spell check, tracker shield)
   return ses;
 }
 
@@ -60,12 +63,13 @@ app.on('web-contents-created', (_ev, wc) => {
   if (!isGuestOf(wc)) return;
 
   // partitions created implicitly by <webview> tags need the internal
-  // protocol + download handling attached as well
+  // protocol + download handling + extension wiring attached as well
   try {
     const ses = wc.session;
     if (ses.partition && ses.partition.startsWith('persist:ws-')) {
       attachProtocolToSession(ses);
       attachDownloadHandlers(ses);
+      extensions.applyToSession(ses);
     }
   } catch { }
 
@@ -197,8 +201,9 @@ function createWindow() {
 }
 
 // ---- app lifecycle ----
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   store.load();
+  registerProxyAuthHandler();   // answers proxy auth from the encrypted store
 
   if (process.argv.includes('--demo')) seedDemo();
 
@@ -209,8 +214,10 @@ app.whenReady().then(() => {
   initDownloads(() => mainWindow);
   if (!IS_DEV || process.env.PH_MENU !== '0') buildAppMenu(() => mainWindow);
 
-  // make sure every existing workspace session gets download handling
+  // make sure every existing workspace session gets download handling,
+  // extension wiring and its own proxy route
   for (const w of store.state.workspaces) sessionForPartition('persist:' + w.id);
+  await applyAllProxies(sessionForPartition);
 
   createWindow();
 

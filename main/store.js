@@ -26,6 +26,11 @@ const DEFAULT_SETTINGS = {
   autoFillOnLoad: true,
   autoDetectSuccess: true,
   betaUpdates: false,            // update channel: false = stable only, true = include prereleases
+  extensions: {                 // built-in extension toggles (Settings > Extensions)
+    spellcheck: true,
+    trackershield: true,
+    historyguard: false
+  },
   vaultEncrypted: false,
   downloadsDir: ''
 };
@@ -55,12 +60,14 @@ class Store {
         const raw = JSON.parse(fs.readFileSync(FILE(), 'utf8'));
         if (raw && typeof raw === 'object' && Array.isArray(raw.workspaces)) {
           this.state = { ...defaultState(), ...raw, settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) } };
+          // extension toggles merge per-key so older stores keep new defaults
+          this.state.settings.extensions = { ...DEFAULT_SETTINGS.extensions, ...(raw.settings?.extensions || {}) };
           if (!this.state.ui) this.state.ui = defaultState().ui;
           if (!this.state.tabs) this.state.tabs = {};
           if (!this.state.history) this.state.history = {};
           // normalize entries so one malformed record cannot brick boot
           this.state.workspaces = this.state.workspaces.filter(w => w && typeof w === 'object' && typeof w.id === 'string')
-            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [] }));
+            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [], proxy: w.proxy && typeof w.proxy === 'object' ? w.proxy : null }));
           for (const w of this.state.workspaces) {
             if (!Array.isArray(this.state.tabs[w.id])) this.state.tabs[w.id] = [];
             if (!Array.isArray(this.state.history[w.id])) this.state.history[w.id] = [];
@@ -135,6 +142,7 @@ class Store {
       identity: null,   // {email,password(secret),displayName,provider,createdAt}
       accounts: [],      // [{origin,email,password(secret),title,createdAt,updatedAt}]
       quickLinks: [],
+      proxy: null,       // {enabled,scheme,host,port,username,password(secret),bypass}
       createdAt: Date.now()
     };
     this.state.workspaces.push(ws);
@@ -145,6 +153,42 @@ class Store {
   }
 
   getWorkspace(id) { return this.state.workspaces.find(w => w.id === id) || null; }
+
+  // ---------- per-workspace proxy ----------
+  // cfg: {enabled, scheme:'http'|'socks5', host, port, username, password?, keepPassword?, bypass}
+  // A new non-empty password replaces the stored one; keepPassword=true with
+  // an empty field retains it; both empty and keepPassword=false clears it.
+  setProxy(wsId, cfg) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return null;
+    if (!cfg || !cfg.enabled) {
+      ws.proxy = null;
+    } else {
+      const port = Number(cfg.port);
+      ws.proxy = {
+        enabled: true,
+        scheme: cfg.scheme === 'socks5' ? 'socks5' : 'http',
+        host: String(cfg.host || '').trim().slice(0, 200),
+        port: Number.isFinite(port) ? Math.max(1, Math.min(65535, Math.round(port))) : 0,
+        username: String(cfg.username ?? '').slice(0, 200),
+        password: (typeof cfg.password === 'string' && cfg.password)
+          ? this.encryptSecret(cfg.password)
+          : (cfg.keepPassword ? (ws.proxy ? ws.proxy.password : null) : null),
+        bypass: String(cfg.bypass ?? '').slice(0, 400)
+      };
+    }
+    this.save();
+    return this.sanitizeProxy(ws.proxy);
+  }
+  sanitizeProxy(p) {
+    if (!p) return null;
+    return {
+      enabled: !!p.enabled, scheme: p.scheme === 'socks5' ? 'socks5' : 'http',
+      host: p.host || '', port: p.port || 0, username: p.username || '',
+      hasPassword: !!p.password,
+      bypass: p.bypass || ''
+    };
+  }
 
   deleteWorkspace(id) {
     const i = this.state.workspaces.findIndex(w => w.id === id);
@@ -304,6 +348,7 @@ class Store {
         identity: this.sanitizeIdentity(w.identity),
         accountCount: w.accounts.length,
         quickLinks: w.quickLinks || [],
+        proxy: this.sanitizeProxy(w.proxy),
         createdAt: w.createdAt
       })),
       tabs: Object.fromEntries(Object.entries(this.state.tabs).map(([k, v]) => [k, v])),

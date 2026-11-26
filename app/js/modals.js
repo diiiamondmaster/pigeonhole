@@ -67,7 +67,7 @@ export function confirmModal({ title, body, actionLabel = 'Confirm', danger = fa
 // =====================================================================
 const TABS_LIST = [
   ['general', 'General'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
-  ['privacy', 'Data & privacy'], ['about', 'About']
+  ['extensions', 'Extensions'], ['privacy', 'Data & privacy'], ['about', 'About']
 ];
 
 export async function settingsModal(activeTab = 'general') {
@@ -75,6 +75,7 @@ export async function settingsModal(activeTab = 'general') {
   qs('#modalRoot').replaceChildren();
   const st = S.settings();
   const appInfo = await PH().app.info();
+  const exts = PH().extensions ? await PH().extensions.list() : [];
 
   const tabContent = {
     general: () => el('div', {},
@@ -128,6 +129,11 @@ export async function settingsModal(activeTab = 'general') {
             class: 'link-btn', text: 'docs/email-providers.md',
             onclick: () => PH().app.open('docs-providers')
           })))),
+
+    extensions: () => el('div', {},
+      section('Built-in extensions',
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'Extensions are small features that run inside Pigeonhole and apply to every workspace. Each one is switched on or off individually, takes effect immediately, and there are no installs or external stores - everything ships with the app.' })),
+      ...exts.map(x => extCard(x))),
 
     privacy: () => el('div', {},
       section('What Pigeonhole stores',
@@ -194,18 +200,41 @@ export async function wsSettingsModal(wsId) {
       title: 'Tile colour', onclick: async () => { await PH().workspaces.setHue(w.id, h); await S.refresh(); renderSidebar(); wsSettingsModal(wsId); }
     })));
 
-  // network visual (proxy routing lands in v1.1)
+  // ---------- per-workspace proxy routing ----------
+  const p = w.proxy || { enabled: false, scheme: 'socks5', host: '', port: '', username: '', hasPassword: false, bypass: '' };
+  let scheme = p.scheme === 'http' ? 'http' : 'socks5';
+  const hostIn = el('input', { class: 'input mono', placeholder: 'proxy host, e.g. 127.0.0.1 or nl.proxy.io', value: p.host || '' });
+  const portIn = el('input', { class: 'input mono', placeholder: '1080', value: p.port || '' });
+  const userIn = el('input', { class: 'input mono', placeholder: 'username (optional)', value: p.username || '' });
+  const passIn = el('input', { class: 'input mono', type: 'password', placeholder: p.hasPassword ? 'saved - type to replace' : 'password (optional)' });
+  const bypassIn = el('input', { class: 'input mono span2', placeholder: 'bypass list, e.g. *.company.com;<local>', value: p.bypass || '' });
+
+  const proxyChk = el('input', { type: 'checkbox' });
+  proxyChk.checked = !!p.enabled;
+  const schemeSeg = el('div', { class: 'seg span2' }, [['socks5', 'SOCKS5'], ['http', 'HTTP']].map(([k, l]) =>
+    el('button', {
+      class: scheme === k ? 'on accent' : '', text: l,
+      onclick: () => { scheme = k; [...schemeSeg.children].forEach((b, i) => b.classList.toggle('on', i === (k === 'socks5' ? 0 : 1))); [...schemeSeg.children].forEach(b => b.classList.toggle('accent', b.classList.contains('on'))); }
+    })));
+  const proxyFields = el('div', { class: 'proxy-grid' }, schemeSeg, hostIn, portIn, userIn, passIn, bypassIn);
+  const syncProxyFields = () => {
+    proxyFields.style.opacity = proxyChk.checked ? '' : '0.45';
+    proxyFields.querySelectorAll('input, button').forEach(x => { x.disabled = !proxyChk.checked; });
+  };
+  proxyChk.addEventListener('change', syncProxyFields);
+
   const netSection = section('Network',
+    el('label', { class: 'row between', style: { padding: '9px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer', marginBottom: '10px' } },
+      el('span', { class: 'grow', style: { paddingRight: '12px' } },
+        el('div', { style: { fontWeight: 550, fontSize: '12.5px' }, text: 'Route this workspace through a proxy' }),
+        el('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '2px' }, text: 'All of this workspace\u2019s page traffic exits through it - accounts never share an IP unless you want them to.' })),
+      el('span', { class: 'switch' }, proxyChk, el('i', {}))),
     el('div', { class: 'row', style: { marginBottom: '12px' } },
-      el('span', { class: 'net-chip direct' }, el('span', { class: 'dot' }), el('span', { text: 'Direct connection - your own IP' })),
-      el('span', { class: 'pill muted', text: 'v1.1 roadmap' })),
-    el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', lineHeight: '1.5', marginBottom: '10px' }, text: 'Each workspace will be routable through its own SOCKS5/HTTP proxy so accounts never share an IP. The fields below are a preview - routing is not active in this build.' }),
-    el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', opacity: 0.45, pointerEvents: 'none' } },
-      el('input', { class: 'input', placeholder: 'proxy host (e.g. nl.proxy.io)', disabled: '' }),
-      el('input', { class: 'input', placeholder: 'port (e.g. 1080)', disabled: '' }),
-      el('input', { class: 'input', placeholder: 'username (optional)', disabled: '' }),
-      el('input', { class: 'input', type: 'password', placeholder: 'password (optional)', disabled: '' })),
-    el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'Follow the Releases page for the 1.1 update.' }));
+      el('span', { class: 'net-chip ' + (p.enabled ? 'proxy' : 'direct') }, el('span', { class: 'dot' }),
+        el('span', { text: p.enabled ? `Routed via ${p.scheme.toUpperCase()} ${p.host}:${p.port}` : 'Direct connection - your own IP' }))),
+    proxyFields,
+    el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'SOCKS5 or HTTP proxy, with optional credentials (stored encrypted like the vault). Applies immediately and reloads the open tab. Bypass list follows Chromium rules; leave empty for just <local>.' }));
+  syncProxyFields();
 
   openModal({
     title: `Workspace ${w.num} settings`, size: '',
@@ -240,7 +269,28 @@ export async function wsSettingsModal(wsId) {
       { label: 'Close' },
       {
         label: 'Save', primary: true, onClick: async () => {
-          if (nameInput.value.trim()) { await PH().workspaces.rename(w.id, nameInput.value.trim().slice(0, 80)); await S.refresh(); renderSidebar(); }
+          if (nameInput.value.trim()) { await PH().workspaces.rename(w.id, nameInput.value.trim().slice(0, 80)); }
+          // per-workspace proxy
+          if (proxyChk.checked) {
+            const host = hostIn.value.trim();
+            const port = Number(portIn.value);
+            if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
+              toast({ title: 'Proxy not saved', sub: 'A host and a port between 1 and 65535 are required.', type: 'error', ic: 'warn', timeout: 6000 });
+              return false;   // keep the dialog open so the fields can be fixed
+            }
+            await PH().workspaces.setProxy(w.id, {
+              enabled: true, scheme, host, port,
+              username: userIn.value.trim(),
+              password: passIn.value,
+              keepPassword: !passIn.value && !!p.hasPassword,
+              bypass: bypassIn.value.trim()
+            });
+            toast({ title: `Workspace ${w.num} routed`, sub: `${scheme.toUpperCase()} ${host}:${port} - the open tab reloads through it.`, type: 'success', ic: 'check' });
+          } else if (p.enabled) {
+            await PH().workspaces.setProxy(w.id, { enabled: false });
+            toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' });
+          }
+          await S.refresh(); renderSidebar(); bus.emit('chrome-updated');
         }
       }
     ]
@@ -268,4 +318,32 @@ function toggleRow(label, sub, value, onChange) {
       el('div', { style: { fontWeight: 550, fontSize: '12.5px' }, text: label }),
       el('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '2px' }, text: sub })),
     el('span', { class: 'switch' }, input, el('i', {})));
+}
+
+// a bare switch for cards (the same .switch component, without a wrapping row)
+function switchEl(value, onChange) {
+  const input = el('input', { type: 'checkbox' });
+  input.checked = !!value;
+  input.addEventListener('change', () => onChange(input.checked));
+  return el('span', { class: 'switch' }, input, el('i', {}));
+}
+
+// extension card for Settings > Extensions
+function extCard(x) {
+  return el('div', { class: 'ext-card' },
+    el('div', { class: 'row between', style: { alignItems: 'flex-start', gap: '10px' } },
+      el('div', { class: 'grow' },
+        el('div', { class: 'row', style: { gap: '6px', alignItems: 'center', flexWrap: 'wrap' } },
+          el('b', { style: { fontSize: '12.5px', fontWeight: 600 }, text: x.name }),
+          el('span', { class: 'pill muted', text: 'v' + x.version }),
+          el('span', { class: 'pill muted', text: 'Built-in' })),
+        el('p', { style: { fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.5' }, text: x.description })),
+      switchEl(x.enabled, async (v) => {
+        try {
+          await PH().extensions.setEnabled(x.id, v);
+          toast({ title: `${x.name} ${v ? 'on' : 'off'}`, sub: v ? 'Applies to every workspace right away.' : 'Off everywhere until you switch it back on.', type: 'info', ic: 'check', timeout: 3500 });
+        } catch (e) {
+          toast({ title: 'Could not switch the extension', sub: String(e?.message || e), type: 'error', ic: 'warn' });
+        }
+      })));
 }

@@ -71,12 +71,15 @@ function renderTopbar() {
   const meta = el('div', { class: 'ws-chip-meta' },
     el('div', { class: 'ws-chip-name', text: w.name }),
     el('div', { class: 'ws-chip-email', text: w.identity ? w.identity.email : 'no email yet' }));
+  const proxied = !!(w.proxy && w.proxy.enabled);
   const net = el('span', {
-    class: 'net-chip direct',
-    title: 'This workspace connects directly. Per-workspace proxy routing arrives in v1.1.'
+    class: 'net-chip ' + (proxied ? 'proxy' : 'direct'),
+    title: proxied
+      ? `This workspace exits through its own ${String(w.proxy.scheme || '').toUpperCase()} proxy (${w.proxy.host}:${w.proxy.port}).`
+      : 'This workspace connects directly. Route it through its own proxy from workspace settings → Network.'
   },
     el('span', { class: 'dot' }),
-    el('span', { text: 'Direct' }));
+    el('span', { text: proxied ? 'Proxy' : 'Direct' }));
   chip.replaceChildren(
     el('span', { class: 'ws-avatar', style: { '--h': w.hue }, text: w.num }),
     meta,
@@ -85,9 +88,14 @@ function renderTopbar() {
 
 function renderStatusbar() {
   const w = S.activeWs();
+  const proxied = !!(w && w.proxy && w.proxy.enabled);
   qs('#statusLeft').replaceChildren(...[
-    el('span', { class: 'status-item', title: 'v1.1 will route each workspace through its own proxy' },
-      el('span', { class: 'dot' }), el('span', { html: 'Direct connection' })),
+    el('span', {
+      class: 'status-item',
+      title: proxied ? `Workspace traffic goes through ${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port}` : 'Each workspace can be routed through its own proxy - workspace settings → Network'
+    },
+      el('span', { class: 'dot' }),
+      el('span', { html: proxied ? `Routed via ${String(w.proxy.scheme).toUpperCase()} proxy` : 'Direct connection' })),
     w ? el('span', { class: 'status-item' }, el('b', { text: `Workspace ${w.num}` }), el('span', { text: w.identity ? w.identity.email : 'no identity yet' })) : null
   ].filter(Boolean));
   qs('#statusRight').replaceChildren(
@@ -104,6 +112,11 @@ function handleEvent({ type, payload }) {
     runAction(payload.action, payload);
   } else if (type === 'download') {
     downloadToast(payload);
+  } else if (type === 'proxy-applied') {
+    // the workspace's route just changed live: reload its pages so they
+    // pick the new path up, and refresh the network chips
+    if (payload.wsId && payload.wsId === S.getActiveWsId()) Tabs.reload(payload.wsId);
+    S.refresh().then(() => { renderTopbar(); renderStatusbar(); });
   } else if (type === 'state-changed') {
     S.refresh().then(() => { renderSidebar(); renderTopbar(); });
   } else if (type === 'scene') {

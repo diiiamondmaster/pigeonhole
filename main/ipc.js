@@ -6,6 +6,8 @@ const { ipcMain, dialog, shell, app, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { cancelDownload } = require('./downloads');
+const extensions = require('./extensions');
+const { applyWorkspaceProxy } = require('./proxy');
 
 const WS_ID = /^[a-zA-Z0-9-]{1,40}$/;
 
@@ -89,6 +91,33 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     } catch { return false; }
   });
 
+  // ---------- per-workspace proxy ----------
+  ipcMain.handle('ph:ws-set-proxy', async (_e, wsId, cfg) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    if (!store.getWorkspace(wsId)) throw bad('no such workspace');
+    if (cfg && typeof cfg !== 'object') throw bad('bad proxy config');
+    if (cfg && cfg.enabled) {
+      if (typeof cfg.host !== 'string' || !cfg.host.trim()) throw bad('proxy host required');
+      if (!Number.isFinite(Number(cfg.port)) || Number(cfg.port) < 1 || Number(cfg.port) > 65535) throw bad('proxy port out of range');
+    }
+    const saved = store.setProxy(wsId, cfg);
+    // route the live session right away (workspaces without a session yet
+    // pick the setting up when their webview first attaches)
+    try { await applyWorkspaceProxy(wsId, session.fromPartition('persist:' + wsId)); } catch { }
+    send('state-changed', { reason: 'ws-proxy', wsId });
+    send('proxy-applied', { wsId, proxy: saved });
+    return saved;
+  });
+
+  // ---------- built-in extensions ----------
+  ipcMain.handle('ph:ext-list', () => extensions.list());
+
+  ipcMain.handle('ph:ext-set-enabled', (_e, id, on) => {
+    const ok = extensions.setEnabled(String(id || '').slice(0, 40), !!on);
+    if (!ok) throw bad('unknown extension');
+    return extensions.list();
+  });
+
   // ---------- tabs & history ----------
   ipcMain.handle('ph:tabs-save', (_e, wsId, tabs) => {
     if (!WS_ID.test(wsId || '')) throw bad('bad id');
@@ -98,6 +127,8 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
 
   ipcMain.handle('ph:history-add', (_e, wsId, entry) => {
     if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    // History Guard extension: stop recording page visits when it is on
+    if (extensions.extEnabled('historyguard')) return true;
     if (entry && isHttpUrl(entry.url)) {
       // titles come from web pages - keep them from smuggling markup into the NTP
       store.addHistory(wsId, { url: entry.url, title: str(entry.title, 200).replace(/[<>]/g, '') });
