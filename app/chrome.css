@@ -32,6 +32,7 @@
   --font: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
   --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.5);
   --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --dock-w: min(420px, 92vw);      /* dock panel width; the active view pads by the same amount */
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -356,6 +357,27 @@ img { -webkit-user-drag: none; }
 .offer-bar .ob-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .offer-bar .ob-text b { color: var(--accent-strong); font-weight: 600; }
 
+/* ================= login offer popup ================= */
+/* small floating pill over the page (not a full-width bar, and it never
+   pushes the page around): "Sign in as <me>?" with a one-click fill */
+.login-pop {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 50;                     /* above dock panels, below find bar */
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(620px, calc(100% - 32px));
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-pop);
+  padding: 7px 9px 7px 14px;
+  font-size: 12.5px; color: var(--text);
+  animation: pop-in 0.16s ease;
+}
+@keyframes pop-in { from { transform: translateX(-50%) translateY(-8px); opacity: 0; } }
+.login-pop .lp-ico { color: var(--accent); display: flex; flex-shrink: 0; }
+.login-pop .lp-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.login-pop .lp-text b { color: var(--accent-strong); font-weight: 600; }
+
 /* ================= find bar ================= */
 .find-bar {
   position: absolute; top: 0; right: 18px; z-index: 70;
@@ -377,14 +399,14 @@ img { -webkit-user-drag: none; }
 /* ================= content & webviews ================= */
 .content { flex: 1; position: relative; min-height: 0; background: var(--bg); }
 .ws-views { position: absolute; inset: 0; }
-.ws-view { position: absolute; inset: 0; display: none; }
+.ws-view { position: absolute; inset: 0; display: none; transition: padding-right 0.17s ease; }
 .ws-view.active { display: block; }
 .ws-view webview { width: 100%; height: 100%; background: #fff; display: flex; }
 
 /* ================= dock panels (wizard / vault) ================= */
 .dock-panel {
   position: absolute; top: 0; right: 0; bottom: 0;
-  width: 420px; max-width: 92vw;
+  width: var(--dock-w);
   background: #1c2027;
   border-left: 1px solid var(--border-strong);
   box-shadow: -8px 0 40px rgba(0, 0, 0, 0.5);
@@ -392,6 +414,10 @@ img { -webkit-user-drag: none; }
   display: flex; flex-direction: column;
   animation: panel-in 0.17s ease;
 }
+/* An open dock panel RESERVES space instead of covering the page: the
+   active workspace view squeezes to the panel's left, so nothing a signup
+   form needs (dropdowns included) ever hides behind the panel. */
+.content:has(> .dock-panel:not(.hidden)) .ws-view.active { padding-right: var(--dock-w); }
 @keyframes panel-in { from { transform: translateX(26px); opacity: 0; } }
 .panel-head {
   display: flex; align-items: center; gap: 10px;
