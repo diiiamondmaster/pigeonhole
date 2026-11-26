@@ -11,15 +11,18 @@ import { toast } from './toasts.js';
 
 let pollTimer = null;
 let ntpTimer = null;
-const dismissed = new Set();     // "origin|kind" for this session
+const dismissed = new Set();     // "origin|kind" - cleared on every navigation, so a fresh page always gets a fresh offer
 let pendingCreds = null;         // {wsId, origin, email, password}
 let currentOffer = null;
+let loginPopEl = null;            // the floating "Sign in as ...?" pill
 
 export function initIdentity() {
   pollTimer = setInterval(pollPage, 1600);
   ntpTimer = setInterval(pollNtp, 420);
 
   bus.on('page-nav', ({ wsId, url, prev }) => {
+    // a fresh page means fresh offers: "Ignore" only sticks within a page
+    dismissed.clear();
     // a navigation away from a page where credentials were typed -> offer save
     if (pendingCreds && pendingCreds.wsId === wsId && prev && pendingCreds.origin && pendingCreds.origin === originOf(prev)) {
       showSaveOffer(pendingCreds);
@@ -28,8 +31,8 @@ export function initIdentity() {
       hideOffer();
     }
   });
-  bus.on('ws-activated', hideOffer);
-  bus.on('tab-activated', hideOffer);
+  bus.on('ws-activated', () => { dismissed.clear(); hideOffer(); });
+  bus.on('tab-activated', () => { dismissed.clear(); hideOffer(); });
 
   qs('#fillBtn').innerHTML = icon('wand', 15) + '<span>Fill identity</span>';
   qs('#fillBtn').addEventListener('click', () => fillActivePage());
@@ -80,7 +83,10 @@ async function pollPage() {
 
     const w = S.ws(wsId);
     if (d.kind === 'login') {
-      showOffer(origin, 'login', w?.identity ? `Sign-in form detected — fill <b>${escapeHtml(w.identity.email)}</b>?` : 'Sign-in form detected', w?.identity ? 'Fill identity' : null, w?.identity);
+      // a little floating popup that asks whether to sign in with this
+      // workspace's identity - instead of making you hunt for the toolbar button
+      if (w?.identity) showLoginPop(origin, w.identity);
+      else showOffer(origin, 'login', 'Sign-in form detected', null, null);
     } else if (d.kind === 'signup') {
       showOffer(origin, 'signup', w?.identity ? `Sign-up form detected — use <b>${escapeHtml(w.identity.email)}</b> here?` : 'Sign-up form detected', w?.identity ? 'Fill identity' : null, w?.identity);
     }
@@ -124,7 +130,34 @@ function showSaveOffer(creds) {
   );
 }
 
+// the sign-in offer: a compact floating pill over the page - it never
+// pushes the page down (the bar) and never covers more than its own
+// one-line footprint
+function showLoginPop(origin, identity) {
+  hideLoginPop();
+  currentOffer = { origin, kind: 'login' };
+  loginPopEl = el('div', { class: 'login-pop', role: 'status' },
+    el('span', { class: 'lp-ico', html: icon('key', 16) }),
+    el('span', { class: 'lp-text', html: `Sign in as <b>${escapeHtml(identity.email)}</b>?` }),
+    el('button', {
+      class: 'btn btn-sm btn-primary', text: 'Fill & sign in',
+      title: 'Fill the sign-in form with this workspace identity',
+      onclick: async () => { hideLoginPop(); await fillActivePage(); }
+    }),
+    el('button', {
+      class: 'btn btn-sm btn-ghost', text: 'Not now',
+      onclick: () => { dismissed.add(origin + '|login'); hideLoginPop(); }
+    })
+  );
+  qs('#content').append(loginPopEl);
+}
+
+function hideLoginPop() {
+  if (loginPopEl) { loginPopEl.remove(); loginPopEl = null; }
+}
+
 export function hideOffer() {
+  hideLoginPop();
   qs('#offerBar').classList.add('hidden');
   currentOffer = null;
 }
