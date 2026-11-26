@@ -100,6 +100,7 @@ function tileMenu(e, w) {
     { label: 'Set up email…', icon: 'mail', action: () => { Tabs.switchWorkspace(w.id); openWizard(w.id); } },
     { sep: true },
     { label: 'Workspace settings…', icon: 'gear', action: () => wsSettingsModal(w.id) },
+    { label: (w.proxy && w.proxy.enabled) ? 'Proxy settings…' : 'Route through a proxy…', icon: 'globe', action: () => wsSettingsModal(w.id, { focusNetwork: true }) },
     { label: 'Rename…', icon: 'user', action: () => renameDialog(w) },
     { label: 'Duplicate workspace', icon: 'copy', action: () => duplicate(w) },
     { sep: true },

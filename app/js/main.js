@@ -101,8 +101,9 @@ function renderTopbar() {
     el('span', { class: 'ws-avatar', style: { '--h': w.hue }, text: w.num }),
     meta,
     net);
-  // clickable chip = quick path to this workspace's settings
-  chip.onclick = () => wsSettingsModal(w.id);
+  // clickable chip = quick path to this workspace's settings (straight to
+  // Network/proxy - the #1 beta question was "where do I even turn it on")
+  chip.onclick = () => wsSettingsModal(w.id, { focusNetwork: true });
   // hue line under the top bar in the active workspace colour
   const bar = qs('.topbar');
   if (bar) { bar.style.setProperty('--h', w.hue); bar.classList.add('has-hue'); }
@@ -124,7 +125,7 @@ export function openNetMenu(anchor, w) {
         }
       }
     },
-    { label: proxied ? 'Proxy settings…' : 'Route through a proxy…', icon: 'panel', action: () => wsSettingsModal(w.id) },
+    { label: proxied ? 'Proxy settings…' : 'Route through a proxy…', icon: 'panel', action: () => wsSettingsModal(w.id, { focusNetwork: true }) },
     ...(proxied ? [{ label: `Turn proxy off (${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port})`, icon: 'close', action: async () => { await PH().workspaces.setProxy(w.id, { enabled: false }); await S.refresh(); renderTopbar(); renderStatusbar(); toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' }); } }] : [])
   ]);
 }

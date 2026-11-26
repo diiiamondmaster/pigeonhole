@@ -648,6 +648,12 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .modal-tabs button:hover { color: var(--text-dim); }
 
 .section { margin-bottom: 20px; }
+.section.flash { animation: section-flash 1.6s ease; border-radius: 8px; }
+@keyframes section-flash {
+  0% { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-dim); }
+  60% { box-shadow: 0 0 0 2px var(--accent-line); background: transparent; }
+  100% { box-shadow: 0 0 0 2px transparent; background: transparent; }
+}
 .section > h3 {
   font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em;
   color: var(--text-faint); margin-bottom: 10px;

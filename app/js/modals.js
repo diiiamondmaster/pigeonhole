@@ -197,7 +197,10 @@ export async function settingsModal(activeTab = 'general') {
 // =====================================================================
 // Workspace settings
 // =====================================================================
-export async function wsSettingsModal(wsId) {
+// opts.focusNetwork: scroll the modal straight to the Network (proxy) section
+// and highlight it briefly - used by the net chip and net menu so proxy
+// settings are impossible to miss.
+export async function wsSettingsModal(wsId, opts = {}) {
   const w = S.ws(wsId);
   if (!w) return;
   qs('#modalRoot').replaceChildren();
@@ -351,6 +354,21 @@ export async function wsSettingsModal(wsId) {
       }
     ]
   });
+
+  // proxy entry points: land the view on the Network section with a short
+  // highlight so the toggle is impossible to miss
+  if (opts.focusNetwork) {
+    const body = qs('#modalRoot .modal-body');
+    const secs = [...(body ? body.querySelectorAll('.section') : [])];
+    const net = secs.find(s => s.querySelector('h3')?.textContent === 'Network');
+    if (net) {
+      net.scrollIntoView({ block: 'start' });
+      if (body) body.scrollTop = Math.max(0, body.scrollTop - 6);
+      net.classList.add('flash');
+      setTimeout(() => net.classList.remove('flash'), 1600);
+      if (proxyChk.checked) setTimeout(() => hostIn.focus(), 60);
+    }
+  }
 }
 
 // =====================================================================
