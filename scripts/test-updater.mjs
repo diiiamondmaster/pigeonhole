@@ -80,7 +80,7 @@ const staticSrv = http.createServer((req, res) => {
 async function bootApp(updateApi, listApi) {
   const env = {
     ...process.env,
-    PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
+    PH_E2E: '1', PH_POOL_OFF: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
     PH_UPDATE_API: `http://127.0.0.1:${API_PORT}${updateApi}`,
     ...(listApi ? { PH_UPDATE_LIST_API: `http://127.0.0.1:${API_PORT}${listApi}` } : {}),
     PH_UPDATE_DELAY: '600',

@@ -216,6 +216,7 @@ img { -webkit-user-drag: none; }
   margin-left: 2px;
   cursor: pointer;
 }
+.net-chip .cc { font-size: 10px; font-weight: 650; color: var(--text-faint); }
 .net-chip:hover { border-color: var(--border-strong); color: var(--text); }
 .net-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
 .net-chip.direct .dot { background: var(--text-faint); }

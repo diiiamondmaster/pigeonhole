@@ -88,15 +88,22 @@ function renderTopbar() {
     el('div', { class: 'ws-chip-name', text: w.name }),
     el('div', { class: 'ws-chip-email', text: w.identity ? w.identity.email : 'no email yet' }));
   const proxied = !!(w.proxy && w.proxy.enabled);
+  const isPool = !!(proxied && w.proxy.mode === 'auto');
+  const exitLabel = isPool
+    ? `Auto exit${w.proxy.country ? ' · ' + w.proxy.country : ''} · ${String(w.proxy.scheme || '').toUpperCase()} ${w.proxy.host}:${w.proxy.port} · ${w.proxy.latencyMs || '?'} ms`
+    : (proxied ? `SOCKS5/HTTP proxy ${w.proxy.host}:${w.proxy.port}` : '');
   const net = el('span', {
     class: 'net-chip ' + (proxied ? 'proxy' : 'direct'),
-    title: proxied
-      ? `This workspace exits through its own ${String(w.proxy.scheme || '').toUpperCase()} proxy (${w.proxy.host}:${w.proxy.port}). Click for network actions.`
-      : 'This workspace connects directly. Click for network actions.',
+    title: isPool
+      ? `Pigeonhole manages this exit: ${exitLabel}. Dead exits rotate automatically. Click for network actions.`
+      : proxied
+        ? `This workspace exits through its own ${String(w.proxy.scheme || '').toUpperCase()} proxy (${w.proxy.host}:${w.proxy.port}). Click for network actions.`
+        : 'This workspace connects directly. Click for network actions.',
     onclick: (e) => { e.stopPropagation(); openNetMenu(e.currentTarget, w); }
   },
     el('span', { class: 'dot' }),
-    el('span', { text: proxied ? 'Proxy' : 'Direct' }));
+    el('span', { text: isPool ? 'Auto' : (proxied ? 'Proxy' : 'Direct') }),
+    ...(isPool && w.proxy.country ? [el('span', { class: 'cc', style: { fontWeight: 650 }, text: ' ' + w.proxy.country })] : []));
   chip.replaceChildren(
     el('span', { class: 'ws-avatar', style: { '--h': w.hue }, text: w.num }),
     meta,
@@ -113,6 +120,7 @@ function renderTopbar() {
 export function openNetMenu(anchor, w) {
   const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : { left: 120, bottom: 80 };
   const proxied = !!(w.proxy && w.proxy.enabled);
+  const isPool = !!(proxied && w.proxy.mode === 'auto');
   showMenu(Math.max(8, r.left - 40), (r.bottom || 80) + 6, [
     {
       label: 'Test exit IP…', icon: 'globe', kbd: '', action: async () => {
@@ -125,6 +133,16 @@ export function openNetMenu(anchor, w) {
         }
       }
     },
+    ...(isPool ? [{
+      label: 'Find another exit…', icon: 'globe', action: async () => {
+        toast({ title: 'Rotating the exit…', sub: 'Picking another verified proxy from the free pool.', type: 'info', ic: 'globe', timeout: 2500 });
+        try {
+          const saved = await PH().pool.rotate(w.id);
+          await S.refresh(); renderTopbar(); renderStatusbar();
+          toast({ title: `Workspace ${w.num} rotated`, sub: `Now exiting via ${saved.scheme.toUpperCase()} ${saved.host}:${saved.port}`, type: 'success', ic: 'check', timeout: 5000 });
+        } catch (e) { toast({ title: 'No alternative exit right now', sub: String(e.message || e).slice(0, 90), type: 'error', ic: 'warn' }); }
+      }
+    }] : []),
     { label: proxied ? 'Proxy settings…' : 'Route through a proxy…', icon: 'panel', action: () => wsSettingsModal(w.id, { focusNetwork: true }) },
     ...(proxied ? [{ label: `Turn proxy off (${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port})`, icon: 'close', action: async () => { await PH().workspaces.setProxy(w.id, { enabled: false }); await S.refresh(); renderTopbar(); renderStatusbar(); toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' }); } }] : [])
   ]);
@@ -133,6 +151,10 @@ export function openNetMenu(anchor, w) {
 function renderStatusbar() {
   const w = S.activeWs();
   const proxied = !!(w && w.proxy && w.proxy.enabled);
+  const isPool = !!(proxied && w.proxy.mode === 'auto');
+  const routeText = isPool
+    ? `Auto exit · ${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port}${w.proxy.country ? ' · ' + w.proxy.country : ''}`
+    : (proxied ? `Routed via ${String(w.proxy.scheme).toUpperCase()} proxy` : 'Direct connection');
   const netItem = el('span', {
     class: 'status-item',
     style: { cursor: 'pointer' },
@@ -140,7 +162,7 @@ function renderStatusbar() {
     ...(w ? { onclick: () => openNetMenu(netItem, w) } : {})
   },
     el('span', { class: 'dot' }),
-    el('span', { html: proxied ? `Routed via ${String(w.proxy.scheme).toUpperCase()} proxy` : 'Direct connection' }));
+    el('span', { html: routeText }));
   qs('#statusLeft').replaceChildren(...[
     netItem,
     ADS_BLOCKED > 0 ? el('span', {
@@ -171,6 +193,14 @@ function handleEvent({ type, payload }) {
     S.refresh().then(() => { renderTopbar(); renderStatusbar(); });
   } else if (type === 'state-changed') {
     S.refresh().then(() => { applyUiPrefs(); renderSidebar(); renderTopbar(); });
+  } else if (type === 'pool-migrated') {
+    // one-time upgrade notice: existing workspaces just got pool exits
+    S.refresh().then(() => { renderSidebar(); renderTopbar(); renderStatusbar(); });
+    toast({
+      title: `Free proxy pool: ${payload.count || 0} workspace${(payload.count || 0) === 1 ? '' : 's'} routed automatically`,
+      sub: 'Each one now exits through its own verified community proxy - check any workspace\u2019s Network settings, or Settings \u2192 Network to control it.',
+      type: 'success', ic: 'globe', timeout: 9000
+    });
   } else if (type === 'ads-blocked') {
     ADS_BLOCKED = payload.total || 0;
     updateAdsBadge(ADS_BLOCKED);

@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS = {
   uiScale: 'normal',             // compact | normal | large  (whole chrome zoom)
   tileSize: 'normal',            // small | normal | large     (sidebar workspace tiles)
   wsAnim: true,                  // fading switch trail on workspace tiles
+  poolAutoNewWorkspaces: true,  // free pool: route new workspaces automatically
   vaultEncrypted: false,
   downloadsDir: ''
 };
@@ -174,9 +175,11 @@ class Store {
   getWorkspace(id) { return this.state.workspaces.find(w => w.id === id) || null; }
 
   // ---------- per-workspace proxy ----------
-  // cfg: {enabled, scheme:'http'|'socks5', host, port, username, password?, keepPassword?, bypass}
-  // A new non-empty password replaces the stored one; keepPassword=true with
-  // an empty field retains it; both empty and keepPassword=false clears it.
+  // cfg: {enabled, scheme:'http'|'socks5', host, port, username, password?, keepPassword?, bypass,
+  //       mode?:'custom'|'auto', source?:'pool', country?, latencyMs?, assignedAt?, prefRegion?}
+  // Pool-assigned exits carry source/mode/country/latency; manual saves come
+  // through as plain 'custom' configs. A new non-empty password replaces the
+  // stored one; keepPassword=true with an empty field retains it.
   setProxy(wsId, cfg) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return null;
@@ -184,6 +187,7 @@ class Store {
       ws.proxy = null;
     } else {
       const port = Number(cfg.port);
+      const pool = (cfg.source === 'pool') || (cfg.mode === 'auto');
       ws.proxy = {
         enabled: true,
         scheme: cfg.scheme === 'socks5' ? 'socks5' : 'http',
@@ -193,7 +197,13 @@ class Store {
         password: (typeof cfg.password === 'string' && cfg.password)
           ? this.encryptSecret(cfg.password)
           : (cfg.keepPassword ? (ws.proxy ? ws.proxy.password : null) : null),
-        bypass: String(cfg.bypass ?? '').slice(0, 400)
+        bypass: String(cfg.bypass ?? '').slice(0, 400),
+        mode: pool ? 'auto' : 'custom',
+        source: pool ? 'pool' : null,
+        country: String(cfg.country || '').toUpperCase().slice(0, 2),
+        latencyMs: Number.isFinite(Number(cfg.latencyMs)) ? Math.round(Number(cfg.latencyMs)) : 0,
+        assignedAt: Number.isFinite(Number(cfg.assignedAt)) ? Number(cfg.assignedAt) : 0,
+        prefRegion: String(cfg.prefRegion || 'any').slice(0, 8)
       };
     }
     this.save();
@@ -205,7 +215,11 @@ class Store {
       enabled: !!p.enabled, scheme: p.scheme === 'socks5' ? 'socks5' : 'http',
       host: p.host || '', port: p.port || 0, username: p.username || '',
       hasPassword: !!p.password,
-      bypass: p.bypass || ''
+      bypass: p.bypass || '',
+      mode: p.mode === 'auto' ? 'auto' : 'custom',
+      source: p.source === 'pool' ? 'pool' : null,
+      country: p.country || '', latencyMs: p.latencyMs || 0,
+      prefRegion: p.prefRegion || 'any'
     };
   }
 

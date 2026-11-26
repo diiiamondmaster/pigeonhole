@@ -66,7 +66,7 @@ export function confirmModal({ title, body, actionLabel = 'Confirm', danger = fa
 // Settings
 // =====================================================================
 const TABS_LIST = [
-  ['general', 'General'], ['appearance', 'Appearance'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
+  ['general', 'General'], ['appearance', 'Appearance'], ['network', 'Network'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
   ['extensions', 'Extensions'], ['privacy', 'Data & privacy'], ['about', 'About']
 ];
 
@@ -128,6 +128,59 @@ export async function settingsModal(activeTab = 'general') {
           'Switching workspaces leaves a short fading glow on the tile you left, in that workspace\u2019s colour.',
           st.wsAnim !== false, async (v) => { await PH().settings.set({ wsAnim: v }); await S.refresh(); }),
         el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', lineHeight: '1.55' }, text: 'The active workspace is also called out three more ways, always on: the hue line under the top bar, the highlighted tile, and the status bar text.' }))),
+
+    network: () => el('div', {},
+      section('Free proxy pool',
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'The pool turns workspaces into routed exits without you owning a proxy: Pigeonhole fetches public community proxy lists, verifies each candidate by routing a request through it, and hands the fastest verified exits to workspaces - one per workspace, rotated automatically when one dies.' })),
+      ...(() => {
+        const stat = el('div', { class: 'hint', style: { minHeight: '16px', marginBottom: '10px' }, text: '…' });
+        const renderStat = async () => {
+          try {
+            const s = await PH().pool.status();
+            const age = s.ageSec == null ? 'never' : (s.ageSec > 90 ? Math.round(s.ageSec / 60) + ' min ago' : 'fresh');
+            stat.textContent = `${s.verified} verified exits (of ${s.candidates} candidates checked) · fetched ${age}` +
+              (s.phase && s.phase !== 'idle' ? ' · checking now…' : '');
+          } catch { stat.textContent = ''; }
+        };
+        renderStat();
+        const refreshBtn = el('button', {
+          class: 'btn btn-sm', text: 'Refresh the pool now',
+          onclick: async () => {
+            stat.textContent = 'Checking community proxies… (this takes up to a minute)';
+            refreshBtn.disabled = true;
+            try {
+              const s = await PH().pool.refresh();
+              stat.textContent = `${s.verified} verified exits (of ${s.candidates} candidates checked) · fetched fresh`;
+              toast({ title: 'Free pool refreshed', sub: `${s.verified} verified exits available`, type: 'success', ic: 'check' });
+            } catch (e) { stat.textContent = 'Refresh failed - ' + String(e.message || e).slice(0, 80); }
+            refreshBtn.disabled = false;
+            renderStat();
+          }
+        });
+        const bulkBtn = el('button', {
+          class: 'btn btn-sm', text: 'Route every workspace through the pool',
+          onclick: async () => {
+            bulkBtn.disabled = true;
+            stat.textContent = 'Assigning exits to all workspaces…';
+            const n = await PH().pool.bulk();
+            await S.refresh();
+            renderSidebar();
+            stat.textContent = `${n.length} workspace(s) now exit through the free pool.`;
+            toast({ title: 'All workspaces routed', sub: `${n.length} exits assigned from the free pool`, type: 'success', ic: 'check' });
+            bulkBtn.disabled = false;
+          }
+        });
+        return [
+          el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px' } }, refreshBtn, bulkBtn),
+          stat,
+          toggleRow('New workspaces get an automatic exit',
+            'Every workspace you create routes through the free pool right away. You can always switch one back to Direct or Custom in its settings.',
+            st.poolAutoNewWorkspaces !== false, async (v) => { await PH().settings.set({ poolAutoNewWorkspaces: v }); await S.refresh(); }),
+          el('div', { class: 'hint', style: { marginTop: '6px' }, text: 'Honest bit: community exits are run by volunteers. HTTPS traffic stays end-to-end encrypted, but the operator can see plain-HTTP requests and the exit IP is theirs. The pool also self-heals - a dead exit is replaced automatically.' })
+        ];
+      })(),
+      section('What this costs',
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'Nothing, and no accounts: the lists come from public aggregators (monosans, Geonode, ProxyScrape, TheSpeedX) refreshed every ~10-30 minutes, and the app re-verifies everything itself before handing an exit to a workspace. Speed varies - community proxies range from fast to slow; the pool always prefers the fastest verified ones, and the Test exit IP button in each workspace proves what you got.' }))),
 
     onboarding: () => el('div', {},
       section('Wizard behaviour',
@@ -219,6 +272,10 @@ export async function wsSettingsModal(wsId, opts = {}) {
 
   // ---------- per-workspace proxy routing ----------
   const p = w.proxy || { enabled: false, scheme: 'socks5', host: '', port: '', username: '', hasPassword: false, bypass: '' };
+  // three routing modes: direct (own IP), auto (free pool exit, managed by
+  // Pigeonhole), custom (user-supplied proxy). Legacy configs without a mode
+  // field count as custom.
+  let mode = p.mode === 'auto' ? 'auto' : (p.enabled ? 'custom' : 'direct');
   let scheme = p.scheme === 'http' ? 'http' : 'socks5';
   const hostIn = el('input', { class: 'input mono', placeholder: 'proxy host, e.g. 127.0.0.1 or nl.proxy.io', value: p.host || '' });
   const portIn = el('input', { class: 'input mono', placeholder: '1080', value: p.port || '' });
@@ -229,13 +286,13 @@ export async function wsSettingsModal(wsId, opts = {}) {
   // duplicate-exit warning: another workspace already exits through the
   // exact same proxy -> accounts would share an IP
   const dupOf = () => S.workspaces().find(x =>
-    x.id !== w.id && x.proxy && x.proxy.enabled &&
+    x.id !== w.id && x.proxy && x.proxy.enabled && x.proxy.mode !== 'auto' &&
     String(x.proxy.host || '').toLowerCase() === String(hostIn.value || '').trim().toLowerCase() &&
     Number(x.proxy.port) === Number(portIn.value) &&
     (x.proxy.scheme === 'socks5') === (scheme === 'socks5'));
   const dupWarn = el('div', { class: 'pill danger', style: { display: 'none', marginTop: '10px' } });
   const syncDup = () => {
-    const o = proxyChk.checked ? dupOf() : null;
+    const o = (mode === 'custom') ? dupOf() : null;
     dupWarn.style.display = o ? '' : 'none';
     dupWarn.textContent = o ? `Workspace ${o.num} already exits through this exact proxy - both would share one IP.` : '';
   };
@@ -252,40 +309,126 @@ export async function wsSettingsModal(wsId, opts = {}) {
     }
   });
 
-  const proxyChk = el('input', { type: 'checkbox' });
-  proxyChk.checked = !!p.enabled;
+  // ---- auto (free pool) panel ----
+  const exitChip = el('span', { class: 'net-chip ' + (mode === 'auto' ? 'proxy' : 'direct') }, el('span', { class: 'dot' }), el('span', { text: '…' }));
+  const poolStat = el('div', { class: 'hint', style: { marginTop: '6px', minHeight: '14px' }, text: '…' });
+  const regionSel = el('select', { class: 'input', style: { width: 'auto', minWidth: '140px' } });
+  const renderExit = async () => {
+    await S.refresh();
+    const cur = (S.workspaces().find(x => x.id === w.id) || {}).proxy;
+    exitChip.className = 'net-chip ' + (cur && cur.enabled ? 'proxy' : 'direct');
+    if (cur && cur.enabled && cur.mode === 'auto') {
+      exitChip.lastChild.textContent = cur.country
+        ? `Auto exit · ${cur.country} · ${cur.scheme.toUpperCase()} ${cur.host}:${cur.port} · ${cur.latencyMs || '?'} ms`
+        : `Auto exit · ${cur.scheme.toUpperCase()} ${cur.host}:${cur.port} · ${cur.latencyMs || '?'} ms`;
+    } else if (cur && cur.enabled) {
+      exitChip.lastChild.textContent = `Routed via ${cur.scheme.toUpperCase()} ${cur.host}:${cur.port}`;
+    } else {
+      exitChip.lastChild.textContent = 'Direct connection - your own IP';
+    }
+  };
+  const renderPoolStat = async () => {
+    try {
+      const s = await PH().pool.status();
+      const age = s.ageSec == null ? 'never' : (s.ageSec > 90 ? Math.round(s.ageSec / 60) + ' min ago' : 'fresh');
+      poolStat.textContent = `Free pool: ${s.verified} verified exits (of ${s.candidates} checked) · ${age}` +
+        (s.phase && s.phase !== 'idle' ? ' · checking…' : '');
+    } catch { poolStat.textContent = ''; }
+  };
+  const loadRegions = async () => {
+    try {
+      const regs = await PH().pool.regions();
+      regionSel.replaceChildren(
+        el('option', { value: 'any', text: 'Any region' }),
+        ...regs.filter(r => r.country && r.country !== '??').slice(0, 30).map(r =>
+          el('option', { value: r.country, text: `${r.country} (${r.count})` })));
+      regionSel.value = p.prefRegion || 'any';
+    } catch { }
+  };
+  const goAuto = async (region) => {
+    exitChip.lastChild.textContent = 'Finding an exit…';
+    poolStat.textContent = 'Warming the free pool…';
+    try {
+      const saved = await PH().workspaces.setProxyMode(w.id, 'auto', region || regionSel.value || 'any');
+      await renderExit();
+      toast({
+        title: `Workspace ${w.num} exits through the free pool`,
+        sub: saved && saved.country ? `${saved.scheme.toUpperCase()} ${saved.host}:${saved.port} · ${saved.country} · ${saved.latencyMs || '?'} ms - automatic, self-healing.` : `${saved.scheme.toUpperCase()} ${saved.host}:${saved.port} - automatic, self-healing.`,
+        type: 'success', ic: 'check', timeout: 6000
+      });
+    } catch (e) {
+      exitChip.lastChild.textContent = 'No exit available yet';
+      poolStat.textContent = `The pool could not verify an exit just now (${String(e.message || e).slice(0, 80)}) - try Refresh in Settings → Network.`;
+    }
+    renderPoolStat();
+  };
+  const rotateBtn = el('button', {
+    class: 'btn btn-sm', html: icon('globe', 13) + ' New exit', title: 'Swap to another verified exit from the free pool',
+    onclick: async () => {
+      exitChip.lastChild.textContent = 'Rotating…';
+      try {
+        const saved = await PH().pool.rotate(w.id);
+        await renderExit();
+        toast({ title: `Workspace ${w.num} rotated`, sub: `Now exiting via ${saved.scheme.toUpperCase()} ${saved.host}:${saved.port}`, type: 'success', ic: 'check', timeout: 5000 });
+      } catch (e) { exitChip.lastChild.textContent = 'No alternative exit right now'; }
+    }
+  });
+  regionSel.addEventListener('change', () => { if (mode === 'auto') goAuto(regionSel.value); });
+  const autoPanel = el('div', { style: { display: mode === 'auto' ? '' : 'none', marginTop: '10px' } },
+    el('div', { class: 'row', style: { marginBottom: '8px', flexWrap: 'wrap', gap: '8px', alignItems: 'center' } },
+      exitChip, rotateBtn),
+    el('div', { class: 'row', style: { marginBottom: '6px', flexWrap: 'wrap', gap: '8px', alignItems: 'center' } },
+      el('span', { class: 'hint', style: { margin: '0' }, text: 'Prefer a region:' }), regionSel),
+    poolStat,
+    el('div', { class: 'hint', style: { marginTop: '6px' }, text: 'Pigeonhole picks a verified community proxy, keeps it healthy and swaps it automatically if it dies - no accounts needed, nothing to type. Community exits are run by volunteers: HTTPS stays end-to-end encrypted, but the operator sees plain-HTTP traffic and the exit IP.' }));
+
+  // ---- custom panel (the classic fields) ----
   const schemeSeg = el('div', { class: 'seg span2' }, [['socks5', 'SOCKS5'], ['http', 'HTTP']].map(([k, l]) =>
     el('button', {
       class: scheme === k ? 'on accent' : '', text: l,
       onclick: () => { scheme = k; [...schemeSeg.children].forEach((b, i) => b.classList.toggle('on', i === (k === 'socks5' ? 0 : 1))); [...schemeSeg.children].forEach(b => b.classList.toggle('accent', b.classList.contains('on'))); syncDup(); }
     })));
-  const proxyFields = el('div', { class: 'proxy-grid' }, schemeSeg, hostIn, portIn, userIn, passIn, bypassIn);
-  const syncProxyFields = () => {
-    proxyFields.style.opacity = proxyChk.checked ? '' : '0.45';
-    proxyFields.querySelectorAll('input, button').forEach(x => { x.disabled = !proxyChk.checked; });
-    syncDup();
-  };
-  proxyChk.addEventListener('change', syncProxyFields);
-  hostIn.addEventListener('input', syncDup);
-  portIn.addEventListener('input', syncDup);
+  const proxyFields = el('div', { class: 'proxy-grid', style: { display: mode === 'custom' ? '' : 'none' } }, schemeSeg, hostIn, portIn, userIn, passIn, bypassIn);
+
+  // ---- mode segment ----
+  const modeSeg = el('div', { class: 'seg', style: { marginBottom: '12px' } }, [['direct', 'Direct'], ['auto', 'Auto (free pool)'], ['custom', 'Custom']].map(([k, l]) =>
+    el('button', {
+      id: 'mode-' + k, class: mode === k ? 'on accent' : '', text: l,
+      onclick: async () => {
+        if (mode === k) return;
+        mode = k;
+        [...modeSeg.children].forEach(b => { b.classList.toggle('on', b.id === 'mode-' + k); b.classList.toggle('accent', b.classList.contains('on')); });
+        proxyFields.style.display = mode === 'custom' ? '' : 'none';
+        autoPanel.style.display = mode === 'auto' ? '' : 'none';
+        syncDup();
+        if (k === 'auto') { await goAuto(); }
+        if (k === 'direct') {
+          await PH().workspaces.setProxyMode(w.id, 'direct');
+          await renderExit();
+          toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' });
+        }
+      }
+    })));
 
   const netSection = section('Network',
-    el('label', { class: 'row between', style: { padding: '9px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer', marginBottom: '10px' } },
-      el('span', { class: 'grow', style: { paddingRight: '12px' } },
-        el('div', { style: { fontWeight: 550, fontSize: '12.5px' }, text: 'Route this workspace through a proxy' }),
-        el('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '2px' }, text: 'All of this workspace\u2019s page traffic exits through it - accounts never share an IP unless you want them to.' })),
-      el('span', { class: 'switch' }, proxyChk, el('i', {}))),
-    el('div', { class: 'row', style: { marginBottom: '12px' } },
-      el('span', { class: 'net-chip ' + (p.enabled ? 'proxy' : 'direct') }, el('span', { class: 'dot' }),
-        el('span', { text: p.enabled ? `Routed via ${p.scheme.toUpperCase()} ${p.host}:${p.port}` : 'Direct connection - your own IP' }))),
+    el('div', { style: { fontWeight: 550, fontSize: '12.5px', marginBottom: '2px' }, text: 'Route this workspace' }),
+    el('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginBottom: '10px' }, text: 'Direct keeps your own IP. Auto exits through a free community proxy that Pigeonhole picks, verifies and heals. Custom routes through your own proxy.' }),
+    modeSeg,
+    autoPanel,
     proxyFields,
     el('div', { class: 'row', style: { marginTop: '10px', flexWrap: 'wrap', gap: '8px', alignItems: 'center' } },
       testIpBtn,
       el('span', { class: 'hint', style: { margin: '0' }, text: 'Proves the real exit IP this workspace uses right now.' })),
     ipOut,
     dupWarn,
-    el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'SOCKS5 or HTTP proxy, with optional credentials (stored encrypted like the vault). Applies immediately and reloads the open tab. Bypass list follows Chromium rules; leave empty for just <local>.' }));
-  syncProxyFields();
+    el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'Applies immediately and reloads the open tab. Custom proxies: SOCKS5 or HTTP, credentials stored encrypted like the vault; bypass list follows Chromium rules (leave empty for just <local>).' }));
+  if (mode === 'auto') { renderExit(); }
+  renderPoolStat();
+  loadRegions();
+  syncDup();
+  if (mode !== 'custom') {
+    proxyFields.querySelectorAll('input, button, select').forEach(x => { x.disabled = mode === 'custom'; });
+  }
 
   openModal({
     title: `Workspace ${w.num} settings`, size: '',
@@ -321,8 +464,9 @@ export async function wsSettingsModal(wsId, opts = {}) {
       {
         label: 'Save', primary: true, onClick: async () => {
           if (nameInput.value.trim()) { await PH().workspaces.rename(w.id, nameInput.value.trim().slice(0, 80)); }
-          // per-workspace proxy
-          if (proxyChk.checked) {
+          // per-workspace proxy: 'auto' and 'direct' were applied the moment
+          // the segment was clicked; 'custom' saves here
+          if (mode === 'custom') {
             const host = hostIn.value.trim();
             const port = Number(portIn.value);
             if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
@@ -337,7 +481,7 @@ export async function wsSettingsModal(wsId, opts = {}) {
               bypass: bypassIn.value.trim()
             });
             await S.refresh();
-            const other = S.workspaces().find(x => x.id !== w.id && x.proxy && x.proxy.enabled &&
+            const other = S.workspaces().find(x => x.id !== w.id && x.proxy && x.proxy.enabled && x.proxy.mode !== 'auto' &&
               String(x.proxy.host).toLowerCase() === host.toLowerCase() && Number(x.proxy.port) === port &&
               x.proxy.scheme === scheme);
             toast({
@@ -345,9 +489,10 @@ export async function wsSettingsModal(wsId, opts = {}) {
               sub: other ? 'Both exit through the same proxy, so those accounts share one IP. Change one of them if that was not the plan.' : `${scheme.toUpperCase()} ${host}:${port} - the open tab reloads through it.`,
               type: other ? 'warn' : 'success', ic: other ? 'warn' : 'check', timeout: other ? 8000 : 5000
             });
-          } else if (p.enabled) {
-            await PH().workspaces.setProxy(w.id, { enabled: false });
-            toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' });
+          } else if (mode === 'auto') {
+            // make sure an exit actually landed even if the panel's first try
+            // failed while the modal was open
+            try { await PH().workspaces.setProxyMode(w.id, 'auto', regionSel.value || 'any'); } catch { }
           }
           await S.refresh(); renderSidebar(); bus.emit('chrome-updated');
         }
@@ -366,7 +511,7 @@ export async function wsSettingsModal(wsId, opts = {}) {
       if (body) body.scrollTop = Math.max(0, body.scrollTop - 6);
       net.classList.add('flash');
       setTimeout(() => net.classList.remove('flash'), 1600);
-      if (proxyChk.checked) setTimeout(() => hostIn.focus(), 60);
+      if (mode === 'custom') setTimeout(() => hostIn.focus(), 60);
     }
   }
 }

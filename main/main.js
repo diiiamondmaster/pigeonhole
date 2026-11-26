@@ -19,6 +19,7 @@ const { registerProtocol, attachProtocolToSession } = require('./protocol');
 const { createUpdater } = require('./updater');
 const extensions = require('./extensions');
 const { registerProxyAuthHandler, applyAllProxies } = require('./proxy');
+const pool = require('./proxypool');
 const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
 
@@ -223,6 +224,11 @@ app.whenReady().then(async () => {
   // extension wiring and its own proxy route
   for (const w of store.state.workspaces) sessionForPartition('persist:' + w.id);
   await applyAllProxies(sessionForPartition);
+
+  // free proxy pool: load the cached verified exits and warm/refresh as needed
+  pool.init();
+  // one-time upgrade: existing never-configured workspaces get pool exits
+  pool.migrate().catch(() => { });
 
   createWindow();
 

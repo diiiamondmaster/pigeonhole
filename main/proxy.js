@@ -3,12 +3,16 @@
 // fixed proxy: HTTP (http://host:port) or SOCKS5 (socks5://host:port),
 // optional credentials and a bypass list. The exit IP is per workspace -
 // accounts never share a network identity unless you want them to.
-const { app } = require('electron');
+const { app, session } = require('electron');
 const { store } = require('./store');
 
 // ProxyConfig for Electron's session.setProxy:
 //   http     -> "http=host:port;https=host:port"   (one HTTP proxy for both)
 //   socks5   -> "socks5://host:port"              (all traffic through SOCKS)
+// Chromium REFUSES credentialed proxies in fixed-server rules (parsed but
+// ERR_NO_SUPPORTED_PROXIES), so credentials never ride inline. For HTTP
+// proxies the app 'login' handler below answers the 407 challenge from the
+// encrypted store - verified working for page traffic.
 function proxyRulesFor(cfg) {
   const host = String(cfg.host || '').trim();
   const port = Number(cfg.port);
@@ -34,17 +38,26 @@ async function applyWorkspaceProxy(wsId, ses) {
   return true;
 }
 
-// Which workspace does this webContents belong to? webview guests carry their
-// partition ("persist:ws-<id>"); the chrome itself has none.
+// Which workspace does this webContents belong to? Session objects don't
+// expose their partition name, but session.fromPartition() returns the SAME
+// cached object per partition - so identity comparison finds the workspace
+// (webview guests, hidden probe windows and the sessions main created all
+// share the object).
 function wsIdOfWebContents(wc) {
   try {
-    const part = wc && wc.session ? (wc.session.partition || '') : '';
-    return part.startsWith('persist:ws-') ? part.slice('persist:'.length) : null;
+    const ses = wc && wc.session;
+    if (!ses) return null;
+    for (const w of store.state.workspaces) {
+      if (session.fromPartition('persist:' + w.id) === ses) return w.id;
+    }
   } catch { return null; }
+  return null;
 }
 
 // Proxy credential handler. Only proxy auth is answered (authInfo.isProxy);
-// website basic-auth is left to the page's own UI.
+// website basic-auth is left to the page's own UI. This is the working
+// authentication path for credentialed HTTP pool exits: Chromium challenges
+// page loads with 407, the stored credentials answer it.
 function registerProxyAuthHandler() {
   app.on('login', (event, wc, _request, authInfo, callback) => {
     if (!authInfo || !authInfo.isProxy) return;         // not ours to answer

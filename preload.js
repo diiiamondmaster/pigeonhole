@@ -13,8 +13,17 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     rename: (wsId, name) => invoke('ph:ws-rename', wsId, name),
     setHue: (wsId, hue) => invoke('ph:ws-set-hue', wsId, hue),
     setProxy: (wsId, cfg) => invoke('ph:ws-set-proxy', wsId, cfg),
+    setProxyMode: (wsId, mode, region) => invoke('ph:ws-proxy-mode', wsId, mode, region),
     testProxy: (wsId, url) => invoke('ph:ws-test-proxy', wsId, url),
     clearData: (wsId) => invoke('ph:ws-clear-data', wsId)
+  },
+  pool: {
+    status: () => invoke('ph:pool-status'),
+    refresh: () => invoke('ph:pool-refresh'),
+    regions: () => invoke('ph:pool-regions'),
+    rotate: (wsId) => invoke('ph:pool-rotate', wsId),
+    heal: (wsId) => invoke('ph:pool-heal', wsId),
+    bulk: () => invoke('ph:pool-bulk')
   },
   tabs: { save: (wsId, tabs) => invoke('ph:tabs-save', wsId, tabs) },
   history: { add: (wsId, entry) => invoke('ph:history-add', wsId, entry) },

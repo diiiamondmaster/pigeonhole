@@ -78,7 +78,7 @@ function showTip(tile, w) {
       html: `<b>${escapeHtml(w.name)}</b><br>` +
         `<span style="color:var(--text-faint)">${w.identity ? escapeHtml(w.identity.email) : 'No email yet — click + to set one up'}</span>` +
         (proxied
-          ? `<br><span style="color:var(--accent)">exit: ${escapeHtml(String(w.proxy.scheme).toUpperCase())} ${escapeHtml(w.proxy.host)}:${w.proxy.port}</span>`
+          ? `<br><span style="color:var(--accent)">exit: ${w.proxy.mode === 'auto' ? 'auto · ' : ''}${escapeHtml(String(w.proxy.scheme).toUpperCase())} ${escapeHtml(w.proxy.host)}:${w.proxy.port}${w.proxy.mode === 'auto' && w.proxy.country ? ' · ' + escapeHtml(w.proxy.country) : ''}</span>`
           : `<br><span style="color:var(--text-faint)">direct connection</span>`)
     });
     document.body.append(tipEl);

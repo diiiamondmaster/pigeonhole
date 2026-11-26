@@ -8,9 +8,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { chromium } from 'playwright';
+import { startPoolFakes } from './pool-fakes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP_PORT = 8195;
+const APP_PORT = 8197;
 const CDP_PORT = 9231;
 const CFG = '/tmp/vis-cfg';
 const OUT = ROOT + '/dev-shots';
@@ -31,10 +32,14 @@ const staticSrv = http.createServer((req, res) => {
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   await new Promise(r => staticSrv.listen(APP_PORT, '127.0.0.1', () => r()));
+  // local fake pool so the auto-routing UI has real exits to show
+  const fakes = await startPoolFakes();
   fs.rmSync(CFG, { recursive: true, force: true });
   const env = {
     ...process.env,
     PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
+    PH_POOL_SOURCES: fakes.sourcesEnv,
+    PH_POOL_CHECK_URL: fakes.checkUrl,
     XDG_CONFIG_HOME: CFG, DISPLAY: process.env.DISPLAY || ':96', ELECTRON_ENABLE_LOGGING: '1'
   };
   const elec = spawn(path.join(ROOT, 'node_modules/electron/dist/electron'),
@@ -107,8 +112,28 @@ async function main() {
   // reset appearance
   await call(() => window.pigeonhole.settings.set({ tileSize: 'normal', uiScale: 'normal' }));
 
-  console.log('shots saved');
+  // 6) auto-routing: bulk-assign pool exits, then the Network settings tab
+  const bulkN = await call(() => window.pigeonhole.pool.bulk().then(r => r.length));
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: OUT + '/auto-topbar.png' });
+  await page.evaluate(() => document.getElementById('settingsBtn').click());
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const tabs = [...document.querySelectorAll('.modal-tabs button')]; const t = tabs.find(b => b.textContent === 'Network'); t && t.click(); });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: OUT + '/network-tab.png' });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // 7) workspace settings opened via the chip: auto mode panel with exit info
+  await page.evaluate(() => document.getElementById('wsChip').click());
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: OUT + '/ws-settings-auto.png' });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
+  console.log('shots saved (bulk assigned', bulkN, 'pool exits)');
   elec.kill(); try { await browser.close(); } catch { }
+  fakes.close();
   staticSrv.close();
   process.exit(0);
 }

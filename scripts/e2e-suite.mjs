@@ -39,7 +39,7 @@ function startStatic() {
 
 async function bootApp() {
   fs.rmSync('/tmp/e2e-cfg', { recursive: true, force: true });
-  const env = { ...process.env, PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`, XDG_CONFIG_HOME: '/tmp/e2e-cfg', DISPLAY: process.env.DISPLAY || ':99', ELECTRON_ENABLE_LOGGING: '1' };
+  const env = { ...process.env, PH_E2E: '1', PH_POOL_OFF: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`, XDG_CONFIG_HOME: '/tmp/e2e-cfg', DISPLAY: process.env.DISPLAY || ':99', ELECTRON_ENABLE_LOGGING: '1' };
   const elec = spawn(path.join(ROOT, 'node_modules/electron/dist/electron'), [ROOT, '--serve-dev', `--remote-debugging-port=${CDP_PORT}`, '--no-sandbox', '--enable-unsafe-swiftshader'], { env, stdio: ['ignore', 'ignore', 'ignore'] });
   const t0 = Date.now();
   let browser = null;

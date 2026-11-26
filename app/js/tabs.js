@@ -8,6 +8,7 @@ import { icon } from './icons.js';
 import * as S from './state.js';
 import { bus, PH } from './state.js';
 import { showMenu } from './ctxmenu.js';
+import { toast } from './toasts.js';
 
 const NTP = (wsId) => `pigeonhole://newtab?ws=${wsId}`;
 
@@ -137,10 +138,33 @@ function buildWebview(wsId, tab) {
   wv.addEventListener('did-fail-load', (e) => {
     if (!e.isMainFrame) return;
     if (e.errorCode === -3) return; // aborted
-    const target = e.validatedURL || tab.url || safeUrl(wv);
-    tab.lastError = { code: e.errorCode, desc: e.errorDescription };
-    const q = `pigeonhole://error?code=${encodeURIComponent(e.errorCode)}&desc=${encodeURIComponent(e.errorDescription || '')}&url=${encodeURIComponent(target)}`;
-    try { wv.loadURL(q); } catch { wv.setAttribute('src', q); }
+    const showErrorPage = () => {
+      const target = e.validatedURL || tab.url || safeUrl(wv);
+      tab.lastError = { code: e.errorCode, desc: e.errorDescription };
+      const q = `pigeonhole://error?code=${encodeURIComponent(e.errorCode)}&desc=${encodeURIComponent(e.errorDescription || '')}&url=${encodeURIComponent(target)}`;
+      try { wv.loadURL(q); } catch { wv.setAttribute('src', q); }
+    };
+    // free-pool auto-heal: a proxy-flavoured failure on an auto-routed
+    // workspace rotates the exit and retries before showing an error page
+    const proxyish = /proxy|socks|tunnel/i.test(String(e.errorDescription || '')) || [-130, -131, -133, -137].includes(e.errorCode);
+    if (proxyish) {
+      const ws = S.ws(wsId);
+      if (ws && ws.proxy && ws.proxy.mode === 'auto') {
+        PH().pool.heal(wsId).then((r) => {
+          if (r && r.rotated) {
+            // proxy-applied reloads the active tab of this workspace; if it
+            // is not active, force it from here
+            const url = e.validatedURL || tab.url || safeUrl(wv);
+            try { if (!isActiveTab(wsId, tab)) wv.loadURL(url); } catch { }
+            toast({ title: 'Exit rotated automatically', sub: 'The free-pool exit for this workspace died - Pigeonhole swapped it and retried.', type: 'info', ic: 'globe', timeout: 6000 });
+          } else {
+            showErrorPage();
+          }
+        }).catch(() => showErrorPage());
+        return;   // hold off the error page until the rotation resolves
+      }
+    }
+    showErrorPage();
   });
   wv.addEventListener('found-in-page', (e) => bus.emit('find-result', e));
   wv.addEventListener('enter-html-full-screen', () => document.getElementById('app').classList.add('page-fs'));

@@ -66,7 +66,7 @@ async function bootApp() {
   fs.rmSync(CFG, { recursive: true, force: true });
   const env = {
     ...process.env,
-    PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
+    PH_E2E: '1', PH_POOL_OFF: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
     XDG_CONFIG_HOME: CFG, DISPLAY: process.env.DISPLAY || ':99', ELECTRON_ENABLE_LOGGING: '1'
   };
   const elec = spawn(path.join(ROOT, 'node_modules/electron/dist/electron'),

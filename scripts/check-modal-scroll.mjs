@@ -27,7 +27,7 @@ await new Promise(r => staticSrv.listen(APP_PORT, '127.0.0.1', () => r()));
 fs.rmSync(CFG, { recursive: true, force: true });
 const elec = spawn(path.join(ROOT, 'node_modules/electron/dist/electron'),
   [ROOT, '--serve-dev', `--remote-debugging-port=${CDP_PORT}`, '--no-sandbox', '--enable-unsafe-swiftshader'],
-  { env: { ...process.env, PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`, XDG_CONFIG_HOME: CFG, DISPLAY: ':96' }, stdio: ['ignore', 'ignore', 'ignore'] });
+  { env: { ...process.env, PH_E2E: '1', PH_POOL_OFF: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`, XDG_CONFIG_HOME: CFG, DISPLAY: ':96' }, stdio: ['ignore', 'ignore', 'ignore'] });
 let browser = null;
 const t0 = Date.now();
 while (!browser) { try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`); } catch { if (Date.now() - t0 > 40000) throw new Error('no electron'); await sleep(400); } }

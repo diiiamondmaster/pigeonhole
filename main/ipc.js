@@ -8,6 +8,7 @@ const path = require('path');
 const { cancelDownload } = require('./downloads');
 const extensions = require('./extensions');
 const { applyWorkspaceProxy } = require('./proxy');
+const pool = require('./proxypool');
 
 const WS_ID = /^[a-zA-Z0-9-]{1,40}$/;
 
@@ -22,13 +23,41 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (w && !w.isDestroyed()) w.webContents.send('ph-event', { type, payload });
   };
 
+  // the pool writes workspace proxies + fires the same events as the manual
+  // path, so assignment is indistinguishable downstream
+  pool.bind(send, store, sessionForPartition);
+
+  // page-load probe on a workspace session: the only path that can answer
+  // proxy 407 challenges (the app 'login' handler supplies the credentials)
+  async function exitIpViaHiddenWindow(target, ses) {
+    const { BrowserWindow } = require('electron');
+    const win = new BrowserWindow({
+      show: false, width: 240, height: 160,
+      webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true }
+    });
+    try {
+      await win.loadURL(target, { userAgent: 'pigeonhole-exit-ip-test' });
+      return await win.webContents.executeJavaScript('document.body ? document.body.innerText : ""');
+    } finally { try { win.destroy(); } catch { } }
+  }
+
   // ---------- state ----------
   ipcMain.handle('ph:state', () => store.snapshot());
 
   // ---------- workspaces ----------
+  // pool assignments are serialized so concurrent workspace creations pick
+  // distinct exits (the pick reads what the previous assign already wrote)
+  let autoAssignQueue = Promise.resolve();
+  const queueAutoAssign = (wsId) => {
+    autoAssignQueue = autoAssignQueue.then(() => pool.assign(wsId).catch(() => { }));
+  };
   ipcMain.handle('ph:ws-create', (_e, opts = {}) => {
     const ws = store.createWorkspace({ name: str(opts?.name, 80), hue: Number.isFinite(opts?.hue) ? opts.hue : null });
     sessionForPartition('persist:' + ws.id);
+    // free pool: new workspaces get an automatic exit unless opted out
+    if (store.state.settings.poolAutoNewWorkspaces) {
+      queueAutoAssign(ws.id);
+    }
     return { id: ws.id, num: ws.num, name: ws.name, hue: ws.hue };
   });
 
@@ -130,8 +159,8 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
         const to = setTimeout(() => {
           if (settled) return; settled = true;
           try { req.destroy(); } catch { }
-          reject(new Error('timed out after 9s'));
-        }, 9000);
+          reject(new Error('timed out after 12s'));
+        }, 12000);
         const chunks = [];
         req.on('response', (r) => {
           r.on('data', (c) => chunks.push(c));
@@ -144,7 +173,22 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
         req.on('error', (e) => { if (!settled) { settled = true; clearTimeout(to); reject(e); } });
         req.end();
       });
-      if (res.status !== 200) throw new Error('the service answered HTTP ' + res.status);
+      if (res.status !== 200) {
+        // 407: a credentialed HTTP exit challenges net.request, which cannot
+        // answer proxy auth (no login event). Retry the probe as a real page
+        // load in a hidden window on the workspace session - there the app
+        // 'login' handler answers from the encrypted store.
+        if (res.status === 407) {
+          try {
+            const text = await exitIpViaHiddenWindow(target, ses);
+            let ip = null;
+            try { ip = JSON.parse(text).ip || null; } catch { }
+            if (!ip) { const m = /\b((?:\d{1,3}\.){3}\d{1,3})\b/.exec(text || ''); if (m) ip = m[1]; }
+            if (ip) return { ok: true, ip, ms: Date.now() - t0, via: via + ' (authenticated)' };
+          } catch { /* fall through to the error */ }
+        }
+        throw new Error('the service answered HTTP ' + res.status);
+      }
       const text = res.body.toString('utf8');
       let ip = null;
       try { ip = JSON.parse(text).ip || null; } catch { }
@@ -154,6 +198,50 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     } catch (e) {
       return { ok: false, error: String(e.message || e), via };
     }
+  });
+
+  // ---------- free proxy pool ----------
+  ipcMain.handle('ph:pool-status', () => pool.status());
+  ipcMain.handle('ph:pool-refresh', () => pool.refresh({ force: true }));
+  ipcMain.handle('ph:pool-regions', () => pool.regions());
+  ipcMain.handle('ph:pool-rotate', (_e, wsId) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    if (!store.getWorkspace(wsId)) throw bad('no such workspace');
+    return pool.rotate(wsId);
+  });
+  ipcMain.handle('ph:pool-heal', (_e, wsId) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    return pool.heal(wsId);
+  });
+  ipcMain.handle('ph:pool-bulk', () => pool.bulk());
+
+  // proxy mode switch: 'direct' | 'auto' | 'custom' (custom is applied by the
+  // normal ph:ws-set-proxy flow once the user fills the fields)
+  ipcMain.handle('ph:ws-proxy-mode', async (_e, wsId, mode, region) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    if (!store.getWorkspace(wsId)) throw bad('no such workspace');
+    if (!['direct', 'auto'].includes(mode)) {
+      // custom: just clear any pool marker so the manual fields own the route
+      const ws = store.getWorkspace(wsId);
+      if (ws && ws.proxy && ws.proxy.enabled) {
+        const saved = store.setProxy(wsId, {
+          enabled: true, scheme: ws.proxy.scheme, host: ws.proxy.host, port: ws.proxy.port,
+          username: ws.proxy.username, keepPassword: true, bypass: ws.proxy.bypass,
+          mode: 'custom'
+        });
+        send('state-changed', { reason: 'ws-proxy', wsId });
+        return saved;
+      }
+      return null;
+    }
+    if (mode === 'direct') {
+      const saved = store.setProxy(wsId, { enabled: false });
+      try { await applyWorkspaceProxy(wsId, session.fromPartition('persist:' + wsId)); } catch { }
+      send('state-changed', { reason: 'ws-proxy', wsId });
+      send('proxy-applied', { wsId, proxy: saved });
+      return saved;
+    }
+    return pool.assign(wsId, { region: typeof region === 'string' ? region.slice(0, 8) : 'any' });
   });
 
   // ---------- built-in extensions ----------
@@ -215,6 +303,7 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (typeof patch.tileSize === 'string') out.tileSize = ['small', 'normal', 'large'].includes(patch.tileSize) ? patch.tileSize : 'normal';
     if (patch.wsAnim != null) out.wsAnim = !!patch.wsAnim;
     if (typeof patch.adshieldLevel === 'string') out.adshieldLevel = ['basic', 'standard', 'strict'].includes(patch.adshieldLevel) ? patch.adshieldLevel : 'standard';
+    if (patch.poolAutoNewWorkspaces != null) out.poolAutoNewWorkspaces = !!patch.poolAutoNewWorkspaces;
     return store.setSettings(out);
   });
 
