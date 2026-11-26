@@ -2,6 +2,7 @@
 // to the chrome renderer) and the right-click menu inside web pages.
 const { Menu, MenuItem, clipboard, app } = require('electron');
 const { store } = require('./store');
+const { extEnabled } = require('./extensions');
 
 const SEARCH_URLS = {
   google: 'https://www.google.com/search?q=',
@@ -107,6 +108,22 @@ function buildGuestMenu(win, wc, params) {
   nav('Forward', () => wc.navigationHistory?.goForward?.() ?? wc.goForward?.(), !!canFwd);
   nav('Reload', () => wc.reload(), true);
   menu.append(new MenuItem({ type: 'separator' }));
+
+  // Spell Check extension: corrections for the misspelled word under the cursor.
+  // (The chrome's own inputs get the same treatment through this menu.)
+  if (params.misspelledWord && extEnabled('spellcheck')) {
+    const word = String(params.misspelledWord);
+    const sugg = (params.dictionarySuggestions || []).slice(0, 5);
+    for (const s of sugg) {
+      menu.append(new MenuItem({ label: s, click: () => { try { wc.replaceMisspelling(s); } catch { } } }));
+    }
+    if (!sugg.length) menu.append(new MenuItem({ label: `No suggestions for “${word.slice(0, 24)}”`, enabled: false }));
+    menu.append(new MenuItem({
+      label: `Add “${word.slice(0, 24)}” to dictionary`,
+      click: () => { try { wc.session.addWordToSpellCheckerDictionary(word); } catch { } }
+    }));
+    menu.append(new MenuItem({ type: 'separator' }));
+  }
 
   if (params.linkURL && /^https?:/i.test(params.linkURL)) {
     menu.append(new MenuItem({ label: 'Open link in new tab', click: () => openTab(params.linkURL) }));
