@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.5 - 2026-11-26
+
+Wizard ergonomics and a sign-in offer.
+
+- **The setup wizard no longer covers the signup form.** The wizard / vault
+  panel used to float over the right edge of the page, hiding whatever the
+  site put there (plan pickers, dropdowns, password fields) until you
+  dismissed it. An open panel now reserves space: the page squeezes to the
+  panel's left, so every select and input stays visible the whole way
+  through a signup. Nothing to dismiss.
+- **A sign-in popup.** When a site (or Google) shows a sign-in form and the
+  workspace has an identity, a small pill floats over the page — "Sign in as
+  <email>?" — with one-click *Fill & sign in*. No more hunting the toolbar
+  button on every page. Dismissing it only sticks for that page: a fresh
+  page always gets a fresh offer.
+- **The workspace sidebar is exactly as wide as its tiles.** It used to
+  carry ~27px of slack on every wrap column and never shrank back after
+  workspaces were removed. It is now measured to the pixel from the tiles
+  themselves. Collapsing the sidebar also works with a fitted width again
+  (an inline-width bug let it linger open).
+
 ## 1.0.4 - 2026-11-25
 
 The "1.0.3 does not start" fix.

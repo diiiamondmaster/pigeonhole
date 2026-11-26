@@ -1,7 +1,7 @@
 {
   "name": "pigeonhole",
   "productName": "Pigeonhole",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A lightweight multi-identity workspace browser. Every account gets its own clean room.",
   "main": "main/main.js",
   "license": "MIT",
