@@ -14,7 +14,11 @@ miss, the extension panel lives one click away, two more extensions ship
   get a small dot when routed, the sidebar tooltip names the exit, and
   saving a proxy that another workspace already uses raises a
   duplicate-exit warning (they would share an IP). The workspace-settings
-  Network section carries a *Test exit IP* button too.
+  Network section carries a *Test exit IP* button too. Every proxy entry
+  point - the workspace chip, the net menu, and the tile right-click menu's
+  new *Route through a proxy…* item - opens the settings already scrolled to
+  the Network section with a short highlight, so the toggle is in view
+  immediately.
 - **Extensions, one click away.** A puzzle button in the top bar (or
   Ctrl+Shift+E) opens a quick panel: live toggles for every extension, the
   Ad Shield level presets, a per-site pause for the page you are on, and
