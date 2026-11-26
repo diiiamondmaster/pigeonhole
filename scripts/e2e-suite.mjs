@@ -6,10 +6,11 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { chromium } from 'playwright';
 
-const ROOT = '/home/z/pigeonhole';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const APP_PORT = 8177;
 const CDP_PORT = 9222;
 const DEV = 'http://127.0.0.1:8123';

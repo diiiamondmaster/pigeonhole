@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- dev mock: a plain site login form (email + password), the shape the
+     sign-in popup targets. Served by --serve-dev on :8123 -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>Mock Site — Sign in</title>
+<style>
+  body { font: 14px/1.5 Arial, sans-serif; margin: 60px auto; max-width: 320px; }
+  label { display: block; margin: 10px 0 4px; }
+  input { width: 100%; padding: 8px; border: 1px solid #999; border-radius: 4px; }
+  button { margin-top: 14px; padding: 9px 18px; }
+</style>
+</head>
+<body>
+  <h2>Sign in</h2>
+  <form id="f" onsubmit="return false">
+    <label for="em">Email</label>
+    <input id="em" name="email" type="email" autocomplete="username">
+    <label for="pw">Password</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password">
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>
