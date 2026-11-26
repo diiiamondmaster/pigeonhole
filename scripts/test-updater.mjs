@@ -84,7 +84,7 @@ async function bootApp(updateApi, listApi) {
     PH_UPDATE_API: `http://127.0.0.1:${API_PORT}${updateApi}`,
     ...(listApi ? { PH_UPDATE_LIST_API: `http://127.0.0.1:${API_PORT}${listApi}` } : {}),
     PH_UPDATE_DELAY: '600',
-    XDG_CONFIG_HOME: '/tmp/upd-cfg', DISPLAY: ':99'
+    XDG_CONFIG_HOME: '/tmp/upd-cfg', DISPLAY: process.env.DISPLAY || ':96'
   };
   const elec = spawn(path.join(ROOT, 'node_modules/electron/dist/electron'),
     [ROOT, '--serve-dev', `--remote-debugging-port=${CDP_PORT}`, '--no-sandbox', '--enable-unsafe-swiftshader'],
