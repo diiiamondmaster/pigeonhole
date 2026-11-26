@@ -34,15 +34,24 @@ export function renderSidebar() {
   applyCollapsed(S.snap()?.ui?.sidebarCollapsed);
 }
 
-// grow the sidebar when tiles wrap into extra columns
+// size the sidebar to EXACTLY what the tiles need: rightmost tile edge +
+// right padding + borders. No fudge and no scrollWidth (which never shrinks
+// back and double-counts padding) - so the sidebar is never wider than
+// the tiles it shows
 function fitColumns() {
   const app = qs('#app');
   if (app.classList.contains('sb-collapsed')) return;
   const tiles = qs('#wsTiles');
-  const needed = tiles ? Math.max(tiles.scrollWidth, 0) : 0;
-  const sidebar = qs('#sidebar');
-  const w = Math.max(74, Math.min(needed + 27, Math.floor(window.innerWidth * 0.42)));
-  sidebar.style.width = `${w}px`;
+  if (!tiles) return;
+  let right = 0;
+  for (const t of tiles.children) {
+    const r = t.getBoundingClientRect();
+    if (r.width && r.right > right) right = r.right;
+  }
+  const base = tiles.getBoundingClientRect().left;
+  const needed = right ? Math.ceil(right - base + 13) : 0;   // + .ws-tiles right padding
+  const w = Math.max(74, Math.min(needed + 2, Math.floor(window.innerWidth * 0.42)));
+  qs('#sidebar').style.width = `${w}px`;
 }
 
 window.addEventListener('resize', () => { requestAnimationFrame(() => {
@@ -143,6 +152,11 @@ export async function newWorkspace() {
 export function applyCollapsed(collapsed) {
   qs('#app').classList.toggle('sb-collapsed', !!collapsed);
   qs('#sbRail').classList.toggle('hidden', !collapsed);
+  // drop the fitted inline width so the stylesheet rules actually apply:
+  // an inline width beats any selector, so width:0 (collapsed) could never
+  // win while one was set. Expanding re-fits from real content right after.
+  qs('#sidebar').style.width = '';
+  if (!collapsed) requestAnimationFrame(fitColumns);
 }
 
 export function toggleSidebar() {
