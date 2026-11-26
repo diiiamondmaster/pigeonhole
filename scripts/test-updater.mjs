@@ -12,8 +12,9 @@ import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
 import { chromium } from 'playwright';
+import { fileURLToPath } from 'url';
 
-const ROOT = '/home/z/pigeonhole';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const APP_PORT = 8177;
 const API_PORT = 8188;
 const CDP_PORT = 9222;
@@ -44,6 +45,19 @@ const api = http.createServer((req, res) => {
     res.end(JSON.stringify({
       tag_name: 'v0.0.1', body: 'old', assets: [{ name: 'Pigeonhole-0.0.1-win-x64.zip', size: 12, browser_download_url: `http://127.0.0.1:${API_PORT}/zip` }]
     }));
+  } else if (route === '/api/list') {
+    // beta channel feed: newest release is a pre-release; an older stable follows
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify([
+      {
+        tag_name: 'v9.9.9-beta.1', prerelease: true, body: 'the mock beta',
+        assets: [{ name: 'Pigeonhole-9.9.9-beta.1-win-x64.zip', size: ZIP_BYTES.length, browser_download_url: `http://127.0.0.1:${API_PORT}/zip` }]
+      },
+      {
+        tag_name: 'v9.9.8', prerelease: false, body: 'stable but older',
+        assets: [{ name: 'Pigeonhole-9.9.8-win-x64.zip', size: ZIP_BYTES.length, browser_download_url: `http://127.0.0.1:${API_PORT}/zip` }]
+      }
+    ]));
   } else if (route === '/zip') {
     res.setHeader('content-length', String(ZIP_BYTES.length));
     res.setHeader('content-type', 'application/zip');
@@ -63,11 +77,12 @@ const staticSrv = http.createServer((req, res) => {
   } catch { res.statusCode = 404; res.end('nf'); }
 });
 
-async function bootApp(updateApi) {
+async function bootApp(updateApi, listApi) {
   const env = {
     ...process.env,
     PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
     PH_UPDATE_API: `http://127.0.0.1:${API_PORT}${updateApi}`,
+    ...(listApi ? { PH_UPDATE_LIST_API: `http://127.0.0.1:${API_PORT}${listApi}` } : {}),
     PH_UPDATE_DELAY: '600',
     XDG_CONFIG_HOME: '/tmp/upd-cfg', DISPLAY: ':99'
   };
@@ -153,6 +168,49 @@ async function main() {
     const ready = await page.evaluate(() => (window.__upd || []).find(e => e.type === 'update-ready')?.payload);
     check('stale pending update re-announced', ready?.latest === '9.8.0', JSON.stringify(ready));
     elec.kill(); try { await browser.close(); } catch { }
+  }
+
+  console.log('\n== U4. beta channel picks the pre-release from the list feed ==');
+  {
+    fs.rmSync(CFG, { recursive: true, force: true });
+    // seed the store with the beta toggle on; the stable endpoint (/api/old)
+    // would say "up to date", so any update event proves the beta feed was used
+    fs.mkdirSync(CFG + '/Pigeonhole', { recursive: true });
+    fs.writeFileSync(CFG + '/Pigeonhole/pigeonhole-store.json', JSON.stringify({
+      version: 1, settings: { betaUpdates: true }, ui: { sidebarCollapsed: false, activeWsId: null },
+      nextWsNum: 1, workspaces: [], tabs: {}, history: {}
+    }));
+    const { browser, page, elec } = await bootApp('/api/old', '/api/list');
+    const waitEv = async (type, ms = 25000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        const got = await page.evaluate(t => (window.__upd || []).some(e => e.type === t), type);
+        if (got) return true;
+        await sleep(400);
+      }
+      return false;
+    };
+    check('beta update-available fires', await waitEv('update-available'));
+    check('beta update-ready fires', await waitEv('update-ready'));
+    const avail = await page.evaluate(() => (window.__upd || []).find(e => e.type === 'update-available')?.payload);
+    check('beta payload names v9.9.9-beta.1', avail?.latest === '9.9.9-beta.1', JSON.stringify(avail));
+    check('beta payload is on the beta channel', avail?.channel === 'beta', JSON.stringify(avail));
+    check('beta payload flagged prerelease', avail?.prerelease === true, JSON.stringify(avail));
+    elec.kill(); try { await browser.close(); } catch { }
+    await sleep(800);
+  }
+
+  console.log('\n== U5. stable channel ignores the pre-release feed ==');
+  {
+    fs.rmSync(CFG, { recursive: true, force: true });
+    // beta toggle off: the list endpoint exists but is never consulted; the
+    // stable endpoint (/api/old) is older than the dev build -> silence
+    const { browser, page, elec } = await bootApp('/api/old', '/api/list');
+    await page.waitForTimeout(6000);
+    const evs = await page.evaluate(() => (window.__upd || []).map(e => e.type));
+    check('no update events with beta off', (evs || []).length === 0, JSON.stringify(evs));
+    elec.kill(); try { await browser.close(); } catch { }
+    await sleep(800);
   }
 
   console.log(`\n==== ${pass} passed, ${fail} failed ====`);

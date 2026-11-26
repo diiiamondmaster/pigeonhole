@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   sharedPassword: null,         // secret
   autoFillOnLoad: true,
   autoDetectSuccess: true,
+  betaUpdates: false,            // update channel: false = stable only, true = include prereleases
   vaultEncrypted: false,
   downloadsDir: ''
 };
@@ -265,7 +266,7 @@ class Store {
   // ---------- settings ----------
   setSettings(patch) {
     const allowed = ['searchEngine', 'identityMode', 'identityBase', 'identityPadding', 'identityStart',
-      'pwLength', 'pwSymbols', 'autoFillOnLoad', 'autoDetectSuccess', 'downloadsDir'];
+      'pwLength', 'pwSymbols', 'autoFillOnLoad', 'autoDetectSuccess', 'betaUpdates', 'downloadsDir'];
     for (const k of allowed) {
       if (k in patch) this.state.settings[k] = patch[k];
     }
@@ -278,7 +279,7 @@ class Store {
       searchEngine: s.searchEngine, identityMode: s.identityMode, identityBase: s.identityBase,
       identityPadding: s.identityPadding, identityStart: s.identityStart, pwLength: s.pwLength,
       pwSymbols: s.pwSymbols, autoFillOnLoad: s.autoFillOnLoad, autoDetectSuccess: s.autoDetectSuccess,
-      vaultEncrypted: s.vaultEncrypted, downloadsDir: s.downloadsDir, hasSharedPassword: !!s.sharedPassword
+      betaUpdates: !!s.betaUpdates, vaultEncrypted: s.vaultEncrypted, downloadsDir: s.downloadsDir, hasSharedPassword: !!s.sharedPassword
     };
   }
   setSharedPassword(pw) {

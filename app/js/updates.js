@@ -24,10 +24,11 @@ function closeProgress() {
 
 export function handleUpdateEvent(type, payload) {
   window.__upd.push({ type, payload });
+  const betaBadge = payload && payload.channel === 'beta' ? ' (beta)' : '';
   if (type === 'update-available') {
     const mb = payload.size ? ' - ' + (payload.size / 1048576).toFixed(0) + ' MB' : '';
     toast({
-      title: `Pigeonhole v${payload.latest} is out`,
+      title: `Pigeonhole v${payload.latest}${betaBadge} is out`,
       sub: `Downloading in the background${mb}. Your workspaces, vault and tabs stay untouched.`,
       ic: 'download', type: 'info', timeout: 7000
     });
@@ -36,7 +37,7 @@ export function handleUpdateEvent(type, payload) {
   } else if (type === 'update-ready') {
     closeProgress();
     toast({
-      title: `v${payload.latest} is ready to install`,
+      title: `v${payload.latest}${payload.channel === 'beta' ? ' (beta)' : ''} is ready to install`,
       sub: 'It applies itself when you quit Pigeonhole - restart now if you like; tabs and workspaces come back exactly as they were.',
       ic: 'check', type: 'success', timeout: 30000,
       actions: [
@@ -58,7 +59,7 @@ export async function checkUpdates({ manual = false } = {}) {
   if (r?.error) {
     toast({ title: 'Could not check for updates', sub: r.error, ic: 'warn', type: 'error', timeout: 8000 });
   } else if (r && !r.hasUpdate) {
-    toast({ title: 'Pigeonhole is up to date', sub: `v${r.current} matches the latest release.`, ic: 'check', type: 'success', timeout: 5000 });
+    toast({ title: 'Pigeonhole is up to date', sub: `v${r.current} matches the latest release${r.channel === 'beta' ? ' on the beta channel' : ''}.`, ic: 'check', type: 'success', timeout: 5000 });
   } else if (r && r.hasUpdate) {
     // the update-available event already toasted; start pulling the zip now
     await PH().updates.download();

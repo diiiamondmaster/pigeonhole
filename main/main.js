@@ -22,10 +22,15 @@ const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
 
 // self-updater: talks to GitHub Releases in the background, reports to the
-// renderer as ph-events (update-available / progress / ready / error)
+// renderer as ph-events (update-available / progress / ready / error).
+// getChannel: the renderer owns the "beta updates" toggle; the store owns
+// the persisted value; the updater asks here at every check.
 const updater = createUpdater((type, payload) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ph-event', { type, payload });
-}, { beforeExit: () => store.flushNow() });
+}, {
+  beforeExit: () => store.flushNow(),
+  getChannel: () => (store.getSettings().betaUpdates ? 'beta' : 'stable')
+});
 
 // ---- single instance ----
 const gotLock = app.requestSingleInstanceLock();

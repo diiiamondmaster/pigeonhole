@@ -4,7 +4,9 @@
 // lives in the OS app-data folder. Swapping the program folder therefore never
 // touches user data - that is the entire data-safety story.
 //
-// Flow: GET /releases/latest -> semver compare -> background download into
+// Flow: check the GitHub Releases feed (stable channel = /releases/latest,
+// beta channel = the newest release of any kind, prereleases included) ->
+// semver compare (with prerelease ordering) -> background download into
 // %TEMP% -> the update "applies on quit": when the user quits (or clicks
 // Restart & update) a detached PowerShell helper waits for this process to
 // exit, unzips the new build over the program folder and relaunches it.
@@ -14,17 +16,40 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 
-const RELEASES_API = process.env.PH_UPDATE_API ||
+const RELEASES_LATEST_API = process.env.PH_UPDATE_API ||
   'https://api.github.com/repos/diiiamondmaster/pigeonhole/releases/latest';
-const ASSET_RE = /^pigeonhole-(\d+(?:\.\d+)*)-win-x64\.zip$/i;
+const RELEASES_LIST_API = process.env.PH_UPDATE_LIST_API ||
+  'https://api.github.com/repos/diiiamondmaster/pigeonhole/releases?per_page=10';
+// matches Pigeonhole-1.0.6-win-x64.zip and Pigeonhole-1.1.0-beta.1-win-x64.zip
+const ASSET_RE = /^pigeonhole-(\d+(?:\.\d+)*(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)-win-x64\.zip$/i;
 
+// "1.2.3" or "1.2.3-beta.1" -> { core:[1,2,3], pre:['beta',1] | null }
 function parseVer(v) {
-  const m = /(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 0, 0];
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(String(v || '').trim());
+  if (!m) return { core: [0, 0, 0], pre: null };
+  return {
+    core: [Number(m[1]), Number(m[2]), Number(m[3])],
+    pre: m[4] ? m[4].split('.').map(x => /^\d+$/.test(x) ? Number(x) : x) : null
+  };
 }
+// full semver ordering, prereleases included:
+// 1.0.5 < 1.1.0-beta.1 < 1.1.0-beta.2 < 1.1.0-rc.1 < 1.1.0
 function isNewer(a, b) {
   const x = parseVer(a), y = parseVer(b);
-  return x[0] !== y[0] ? x[0] > y[0] : x[1] !== y[1] ? x[1] > y[1] : x[2] > y[2];
+  for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i] > y.core[i];
+  const px = x.pre, py = y.pre;
+  if (!px && !py) return false;            // 1.1.0 vs 1.1.0
+  if (!px) return true;                    // a plain release beats any prerelease
+  if (!py) return false;
+  for (let i = 0; i < Math.min(px.length, py.length); i++) {
+    const p = px[i], q = py[i];
+    if (p === q) continue;
+    const pn = typeof p === 'number', qn = typeof q === 'number';
+    if (pn && qn) return p > q;            // numeric identifiers compare numerically
+    if (pn !== qn) return qn;              // ...and always beat alphanumeric ones
+    return String(p) > String(q);          // alphanumeric compare lexically
+  }
+  return px.length > py.length;            // more identifiers = higher precedence
 }
 const psq = (s) => String(s).replace(/'/g, "''");   // powershell single-quote escape
 
@@ -77,12 +102,13 @@ function downloadFile(url, dest, onProgress) {
 
 function createUpdater(send, hooks = {}) {
   const st = {
-    phase: 'idle', current: app.getVersion(),
-    latest: null, hasUpdate: false, size: 0,
+    phase: 'idle', current: app.getVersion(), channel: 'stable',
+    latest: null, hasUpdate: false, size: 0, isPrerelease: false,
     assetName: '', assetUrl: '', zipPath: null, error: null, _applied: false
   };
   const pendingFile = () => path.join(app.getPath('userData'), 'pending-update.json');
-  const snap = () => ({ current: st.current, latest: st.latest, hasUpdate: st.hasUpdate, size: st.size, phase: st.phase, error: st.error, zipReady: !!(st.zipPath && fs.existsSync(st.zipPath)) });
+  const snap = () => ({ current: st.current, latest: st.latest, hasUpdate: st.hasUpdate, size: st.size, channel: st.channel, prerelease: st.isPrerelease, phase: st.phase, error: st.error, zipReady: !!(st.zipPath && fs.existsSync(st.zipPath)) });
+  const GH_HEADERS = { 'User-Agent': 'pigeonhole-updater', 'Accept': 'application/vnd.github+json' };
 
   // ---- detached helper: waits for exit, unzips over the program folder ----
   function spawnHelper(appDir, zip, relaunch, pid) {
@@ -109,21 +135,37 @@ function createUpdater(send, hooks = {}) {
   }
 
   // ---- check GitHub for a newer release ----
-  async function check({ silent = false } = {}) {
+  // stable channel: the latest regular release (/releases/latest).
+  // beta channel: the newest release of ANY kind - prereleases included, but
+  // a newer stable release also qualifies, so the beta user never lags behind.
+  async function check({ silent = false, channel } = {}) {
     st.phase = 'checking'; st.error = null;
     try {
-      const res = await get(RELEASES_API, { 'User-Agent': 'pigeonhole-updater', 'Accept': 'application/vnd.github+json' });
-      if (res.status !== 200) throw new Error('GitHub answered HTTP ' + res.status + (res.status === 403 ? ' (rate limited?)' : ''));
-      const rel = JSON.parse(res.body.toString('utf8'));
+      const ch = channel || (typeof hooks.getChannel === 'function' ? hooks.getChannel() : null) || 'stable';
+      st.channel = ch;
+      let rel = null;
+      if (ch === 'beta') {
+        const res = await get(RELEASES_LIST_API, GH_HEADERS);
+        if (res.status !== 200) throw new Error('GitHub answered HTTP ' + res.status + (res.status === 403 ? ' (rate limited?)' : ''));
+        const rels = JSON.parse(res.body.toString('utf8'));
+        if (!Array.isArray(rels)) throw new Error('Unexpected release feed');
+        rel = rels.find(r => (r.assets || []).some(a => ASSET_RE.test(a.name || ''))) || null;
+        if (!rel) throw new Error('No release with a Windows zip asset is available');
+      } else {
+        const res = await get(RELEASES_LATEST_API, GH_HEADERS);
+        if (res.status !== 200) throw new Error('GitHub answered HTTP ' + res.status + (res.status === 403 ? ' (rate limited?)' : ''));
+        rel = JSON.parse(res.body.toString('utf8'));
+      }
       const tag = String(rel.tag_name || '').replace(/^v/, '');
       const asset = (rel.assets || []).find(a => ASSET_RE.test(a.name || ''));
       if (!tag || !asset) throw new Error('The latest release has no Windows zip asset');
       st.latest = tag;
+      st.isPrerelease = !!rel.prerelease;
       st.assetName = asset.name;
       st.assetUrl = asset.browser_download_url;
       st.size = asset.size || 0;
       st.hasUpdate = isNewer(tag, st.current);
-      if (st.hasUpdate) send('update-available', { current: st.current, latest: st.latest, size: st.size });
+      if (st.hasUpdate) send('update-available', { current: st.current, latest: st.latest, size: st.size, channel: st.channel, prerelease: st.isPrerelease });
     } catch (e) {
       st.error = e.message; st.hasUpdate = false;
       if (!silent) send('update-error', { message: e.message });

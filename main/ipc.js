@@ -121,6 +121,7 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (patch.pwSymbols != null) out.pwSymbols = !!patch.pwSymbols;
     if (patch.autoFillOnLoad != null) out.autoFillOnLoad = !!patch.autoFillOnLoad;
     if (patch.autoDetectSuccess != null) out.autoDetectSuccess = !!patch.autoDetectSuccess;
+    if (patch.betaUpdates != null) out.betaUpdates = !!patch.betaUpdates;
     if (typeof patch.downloadsDir === 'string') out.downloadsDir = str(patch.downloadsDir, 500);
     return store.setSettings(out);
   });

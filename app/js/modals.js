@@ -147,6 +147,15 @@ export async function settingsModal(activeTab = 'general') {
       el('div', { style: { color: 'var(--text-faint)', fontSize: '12px', marginBottom: '14px' }, text: `v${appInfo.version} · Electron ${appInfo.electron} · Chromium ${appInfo.chrome}` }),
       el('div', { class: 'row', style: { justifyContent: 'center', gap: '8px', flexWrap: 'wrap' } },
         el('button', { class: 'btn btn-sm', html: icon('download', 13) + ' Check for updates', onclick: () => checkUpdates({ manual: true }) })),
+      el('div', { style: { marginTop: '10px', textAlign: 'left', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '10px', padding: '4px 12px', marginBottom: '2px' } },
+        toggleRow('Beta updates',
+          'Ride pre-release builds: checks include GitHub releases marked as pre-release (e.g. v1.1.0-beta.1). Turn it off any time to settle back on stable.',
+          !!st.betaUpdates, async (v) => {
+            await PH().settings.set({ betaUpdates: v });
+            await S.refresh();
+            toast({ title: v ? 'Beta updates on' : 'Beta updates off', sub: v ? 'The next check looks at pre-release builds too.' : 'Checking stable releases only from now on.', type: 'info', ic: 'check', timeout: 4000 });
+            checkUpdates({ manual: true });
+          })),
       el('p', { style: { marginTop: '8px', fontSize: '11px', color: 'var(--text-faint)', lineHeight: '1.55', marginBottom: '16px' }, text: 'Updates pull from GitHub Releases automatically: the app checks on its own, downloads in the background and installs itself when you quit. Workspaces, vault and settings are never touched.' }),
       el('p', { style: { fontSize: '12.5px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '18px' }, text: 'A lightweight multi-identity workspace browser. Every account gets its own clean room - separate cookies, cache and storage - under one roof.' }),
       el('div', { class: 'row', style: { justifyContent: 'center', gap: '8px', flexWrap: 'wrap' } },
