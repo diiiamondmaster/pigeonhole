@@ -23,12 +23,18 @@ adds on top:
 - **Isolated workspaces.** Each workspace has its own cookies, cache,
   localStorage, IndexedDB and service workers. Nothing crosses over - you can
   be signed in to the same site in five workspaces at the same time.
-- **Per-workspace proxy routing (beta line).** Each workspace can exit through
-  its own SOCKS5/HTTP proxy, credentials stored encrypted - so accounts
-  never share an exit IP unless you want them to. A clickable *Direct/Proxy*
-  chip and a **Test exit IP** command prove the exit, tiles carry a routing
-  dot, and a duplicate-exit warning catches shared proxies. Turn on *Beta
-  updates* (Settings → About) to ride the 1.1 line.
+- **Per-workspace proxy routing, automatic (beta line).** Workspaces can exit
+  through the built-in **free proxy pool**: Pigeonhole fetches public
+  community proxy lists, health-checks each candidate by routing a probe
+  through it, and hands every workspace its own fastest verified exit -
+  auto-assigned on workspace creation, self-healing when an exit dies
+  (rotation + reload, no input needed). Prefer your own SOCKS5/HTTP proxy
+  instead? The same Network section takes manual configs, credentials stored
+  encrypted. A clickable *Direct/Auto/Proxy* chip, **Test exit IP** command
+  and routing dots prove the exit. Community exits: HTTPS stays
+  end-to-end encrypted, but the volunteer operator sees plain-HTTP and the
+  exit IP is theirs. Turn on *Beta updates* (Settings → About) to ride the
+  1.1 line.
 - **Built-in extensions (beta line).** Small features that ship inside the app,
   each switched on or off individually - from the puzzle button in the top
   bar or Settings → Extensions: a spell checker with right-click corrections,

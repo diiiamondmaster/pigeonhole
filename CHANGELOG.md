@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.1.0-beta.3 - 2026-11-26 (beta channel)
+
+The free proxy pool: workspaces can exit through community proxies without
+you owning one, automatically.
+
+- **New: free proxy pool.** Pigeonhole fetches public community proxy lists
+  (monosans, Geonode, ProxyScrape, TheSpeedX - free, no accounts), then
+  health-checks every candidate by actually routing a probe through it. Only
+  verified exits - proven TLS-capable - enter the pool, ranked by measured
+  latency, with country enrichment. The pool refreshes itself in the
+  background and caches to disk.
+- **Automatic exits.** New workspaces get a pool exit the moment they are
+  created (one click to turn off in Settings -> Network). On upgrading to
+  this beta, workspaces that never had a proxy at all are routed once,
+  automatically, with a notice. *Settings -> Network* can also route every
+  workspace at once and shows live pool status.
+- **Workspace modes.** The Network section of workspace settings becomes
+  *Direct / Auto (free pool) / Custom*: Auto shows the live exit (country,
+  address, latency), a *New exit* button, region preference, and the exit-IP
+  test. The top bar chip reads *Auto* with the exit's country; the status
+  bar spells out the auto-exit route.
+- **Self-healing.** A pool exit that dies mid-session (proxy errors on a
+  page) is rotated automatically and the page reloads - reliability comes
+  from rotation, not from any single open proxy. Refresh drops dead exits
+  from the verified pool.
+- **Credentialed community proxies work**: the health check counts a 407
+  challenge as "alive", and page traffic then authenticates through the
+  encrypted store via Electron's login flow (E2E-proven). Chromium refuses
+  credentialed SOCKS5 (it never offers the auth method), so those entries
+  are skipped at parse time.
+- **Honest limits.** Community exits are run by volunteers: HTTPS stays
+  end-to-end encrypted, but the operator sees plain-HTTP traffic and the
+  exit IP is theirs. Speed varies; the pool always prefers the fastest
+  verified exits and *Test exit IP* proves what you actually got.
+- E2E: 27-check pool suite against local fake SOCKS5/HTTP proxies (boot
+  auto-enable, distinct exits, dead-candidate filtering, transit proofs,
+  credentialed auth, rotation, auto-heal, mode switching, bulk); live smoke
+  test against the real public sources (260 candidates fetched, 36 verified,
+  17 countries, real exit-IP change confirmed).
+
 ## 1.1.0-beta.2 - 2026-11-26 (beta channel)
 
 The beta that makes the 1.1 line visible: proxies are now impossible to
