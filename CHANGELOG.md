@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.6 - 2026-11-26
+
+The beta channel.
+
+- **Beta updates toggle.** Settings → About now carries a "Beta updates"
+  switch right next to "Check for updates". With it on, the updater includes
+  releases marked as pre-release on GitHub (versions like `v1.1.0-beta.1`),
+  so you can ride the 1.1 line before it goes stable. Turn it off any time
+  and the next check settles back on stable releases.
+- **Version comparison now understands pre-release tags.** The updater's
+  version check was plain `1.2.3` numeric ordering; it now follows full
+  semver ordering (`1.1.0-beta.1 > 1.0.6`, `1.1.0-beta.2 > 1.1.0-beta.1`,
+  `1.1.0 > 1.1.0-beta.1`), and release assets like
+  `Pigeonhole-1.1.0-beta.1-win-x64.zip` are recognized. Toasts say which
+  channel an update came from.
+- Everything from 1.0.5 is included unchanged.
+
 ## 1.0.5 - 2026-11-26
 
 Wizard ergonomics and a sign-in offer.
