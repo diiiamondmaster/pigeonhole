@@ -2,7 +2,7 @@
 // to the chrome renderer) and the right-click menu inside web pages.
 const { Menu, MenuItem, clipboard, app } = require('electron');
 const { store } = require('./store');
-const { extEnabled } = require('./extensions');
+const { extEnabled, effectiveLevelFor, setSiteLevel } = require('./extensions');
 
 const SEARCH_URLS = {
   google: 'https://www.google.com/search?q=',
@@ -64,6 +64,7 @@ function buildAppMenu(getWindow) {
         S('Zoom &Reset', 'zoom-reset', 'CmdOrCtrl+0'),
         { type: 'separator' },
         S('Toggle &Sidebar', 'toggle-sidebar', 'CmdOrCtrl+B'),
+        S('&Extensions panel', 'ext-panel', 'CmdOrCtrl+Shift+E'),
         { role: 'togglefullscreen' },
         { type: 'separator' },
         { role: 'toggleDevTools' }
@@ -153,6 +154,21 @@ function buildGuestMenu(win, wc, params) {
   }
 
   if (params.isEditable || (params.selectionText && params.selectionText.trim())) {
+    menu.append(new MenuItem({ type: 'separator' }));
+  }
+
+  // Ad Shield per-site control: right on the page being looked at.
+  let pageOrigin = null;
+  try { const u = new URL(wc.getURL()); if (/^https?:$/.test(u.protocol)) pageOrigin = u.origin; } catch { }
+  if (pageOrigin && extEnabled('adshield')) {
+    const lvl = effectiveLevelFor(pageOrigin);
+    const on = lvl !== 'off';
+    menu.append(new MenuItem({
+      type: 'checkbox',
+      label: 'Block ads on this site',
+      checked: on,
+      click: () => setSiteLevel(pageOrigin, on ? 'off' : null)
+    }));
     menu.append(new MenuItem({ type: 'separator' }));
   }
 

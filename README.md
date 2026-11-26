@@ -25,12 +25,21 @@ adds on top:
   be signed in to the same site in five workspaces at the same time.
 - **Per-workspace proxy routing (beta line).** Each workspace can exit through
   its own SOCKS5/HTTP proxy, credentials stored encrypted - so accounts
-  never share an exit IP unless you want them to. Turn on *Beta updates*
-  (Settings → About) to ride the 1.1 line.
+  never share an exit IP unless you want them to. A clickable *Direct/Proxy*
+  chip and a **Test exit IP** command prove the exit, tiles carry a routing
+  dot, and a duplicate-exit warning catches shared proxies. Turn on *Beta
+  updates* (Settings → About) to ride the 1.1 line.
 - **Built-in extensions (beta line).** Small features that ship inside the app,
-  each switched on or off individually in Settings → Extensions: a spell
-  checker with right-click corrections, a tracker/ad-beacon shield, and a
-  history guard.
+  each switched on or off individually - from the puzzle button in the top
+  bar or Settings → Extensions: a spell checker with right-click corrections,
+  a tracker/ad-beacon shield, **Video Speed** (a Video Speed Controller for
+  any video: S/D/R/V keys, per-site remembered speeds), and **Ad Shield**
+  (ad blocking with Basic/Standard/Strict levels, per-site pause, and a
+  visible blocked count).
+- **Appearance settings (beta line).** Interface scale, workspace tile size
+  and the workspace-switch animation (a fading Opera-GX-style trail) are
+  adjustable in Settings → Appearance; the active workspace is called out
+  with a hue line under the top bar.
 - **Guided email setup.** Creating the Nth mailbox is a wizard: pick a provider
   that does not demand a phone number, generate a numbered address
   (`yourhandle001`, `yourhandle002`, ...), and let Pigeonhole fill the signup

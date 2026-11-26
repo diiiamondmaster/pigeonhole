@@ -19,7 +19,6 @@ const { registerProtocol, attachProtocolToSession } = require('./protocol');
 const { createUpdater } = require('./updater');
 const extensions = require('./extensions');
 const { registerProxyAuthHandler, applyAllProxies } = require('./proxy');
-
 const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
 
@@ -32,6 +31,11 @@ const updater = createUpdater((type, payload) => {
 }, {
   beforeExit: () => store.flushNow(),
   getChannel: () => (store.getSettings().betaUpdates ? 'beta' : 'stable')
+});
+
+// extension engine -> renderer events (blocked-ad counter updates)
+extensions.setEmitter((type, payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ph-event', { type, payload });
 });
 
 // ---- single instance ----
@@ -204,6 +208,7 @@ function createWindow() {
 app.whenReady().then(async () => {
   store.load();
   registerProxyAuthHandler();   // answers proxy auth from the encrypted store
+  extensions.init();            // content-script injection + adshield tracking
 
   if (process.argv.includes('--demo')) seedDemo();
 

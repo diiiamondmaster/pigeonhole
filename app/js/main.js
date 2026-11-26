@@ -9,12 +9,15 @@ import { initSidebar, renderSidebar, applyCollapsed, newWorkspace } from './side
 import { initToolbar, syncAddr, syncNav, toggleFind } from './toolbar.js';
 import { initIdentity, syncFillBtn } from './identity.js';
 import { initVault, openVault, closeVault } from './vault.js';
-import { settingsModal } from './modals.js';
+import { settingsModal, wsSettingsModal } from './modals.js';
 import { toast, downloadToast } from './toasts.js';
 import { closeWizard } from './wizard.js';
 import { handleUpdateEvent, checkUpdates } from './updates.js';
+import { initExtPanel, toggleExtPanel, updateAdsBadge, openShieldMenu } from './extpanel.js';
+import { showMenu } from './ctxmenu.js';
 
 let APP_INFO = { version: '1.0.0' };
+let ADS_BLOCKED = 0;
 
 async function boot() {
   await S.refresh();
@@ -41,18 +44,21 @@ async function boot() {
   initToolbar();
   initIdentity();
   initVault();
+  initExtPanel();
+  applyUiPrefs();
   renderSidebar();
   renderTopbar();
   renderStatusbar();
 
   PH().app.info().then(info => { APP_INFO = info; renderStatusbar(); });
+  PH().extensions.adsCount().then(c => { ADS_BLOCKED = c.total || 0; updateAdsBadge(ADS_BLOCKED); renderStatusbar(); }).catch(() => { });
   PH().app.setTitle('Pigeonhole');
 
   PH().onEvent(handleEvent);
   window.addEventListener('keydown', onChromeKey, { capture: true });
 
   bus.on('ws-activated', () => { renderTopbar(); renderStatusbar(); syncAddr(); syncNav(); syncFillBtn(); });
-  bus.on('chrome-updated', () => { renderTopbar(); renderSidebar(); renderStatusbar(); syncFillBtn(); });
+  bus.on('chrome-updated', () => { renderTopbar(); renderSidebar(); renderStatusbar(); syncFillBtn(); applyUiPrefs(); });
   bus.on('active-tab-updated', ({ wsId, tab }) => {
     if (wsId !== S.getActiveWsId()) return;
     renderStatusbar();
@@ -61,6 +67,16 @@ async function boot() {
 
   applyCollapsed(S.snap()?.ui?.sidebarCollapsed);
   console.log('[pigeonhole] chrome ready');
+}
+
+// ---------- appearance prefs (Settings > Appearance) ----------
+function applyUiPrefs() {
+  const st = S.settings();
+  // whole-chrome zoom: compact 90% / large 110%
+  document.body.style.zoom = ({ compact: '0.9', large: '1.1' })[st.uiScale] || '';
+  // sidebar workspace tiles
+  const tile = ({ small: '40px', large: '54px' })[st.tileSize] || '46px';
+  document.documentElement.style.setProperty('--tile', tile);
 }
 
 // ---------- top bar ----------
@@ -75,8 +91,9 @@ function renderTopbar() {
   const net = el('span', {
     class: 'net-chip ' + (proxied ? 'proxy' : 'direct'),
     title: proxied
-      ? `This workspace exits through its own ${String(w.proxy.scheme || '').toUpperCase()} proxy (${w.proxy.host}:${w.proxy.port}).`
-      : 'This workspace connects directly. Route it through its own proxy from workspace settings → Network.'
+      ? `This workspace exits through its own ${String(w.proxy.scheme || '').toUpperCase()} proxy (${w.proxy.host}:${w.proxy.port}). Click for network actions.`
+      : 'This workspace connects directly. Click for network actions.',
+    onclick: (e) => { e.stopPropagation(); openNetMenu(e.currentTarget, w); }
   },
     el('span', { class: 'dot' }),
     el('span', { text: proxied ? 'Proxy' : 'Direct' }));
@@ -84,18 +101,52 @@ function renderTopbar() {
     el('span', { class: 'ws-avatar', style: { '--h': w.hue }, text: w.num }),
     meta,
     net);
+  // clickable chip = quick path to this workspace's settings
+  chip.onclick = () => wsSettingsModal(w.id);
+  // hue line under the top bar in the active workspace colour
+  const bar = qs('.topbar');
+  if (bar) { bar.style.setProperty('--h', w.hue); bar.classList.add('has-hue'); }
+}
+
+// network actions from the top bar chip / status bar
+export function openNetMenu(anchor, w) {
+  const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : { left: 120, bottom: 80 };
+  const proxied = !!(w.proxy && w.proxy.enabled);
+  showMenu(Math.max(8, r.left - 40), (r.bottom || 80) + 6, [
+    {
+      label: 'Test exit IP…', icon: 'globe', kbd: '', action: async () => {
+        toast({ title: 'Testing the exit IP…', sub: 'Pigeonhole asks an IP service through this workspace\u2019s own connection.', type: 'info', ic: 'globe', timeout: 2500 });
+        const res = await PH().workspaces.testProxy(w.id);
+        if (res?.ok) {
+          toast({ title: `Exit IP: ${res.ip}`, sub: `via ${res.via} \u00b7 ${res.ms || 0} ms`, type: 'success', ic: 'check', timeout: 7000 });
+        } else {
+          toast({ title: 'Exit IP test failed', sub: `${res?.error || 'no answer'} \u00b7 via ${res?.via || 'direct'}`, type: 'error', ic: 'warn', timeout: 7000 });
+        }
+      }
+    },
+    { label: proxied ? 'Proxy settings…' : 'Route through a proxy…', icon: 'panel', action: () => wsSettingsModal(w.id) },
+    ...(proxied ? [{ label: `Turn proxy off (${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port})`, icon: 'close', action: async () => { await PH().workspaces.setProxy(w.id, { enabled: false }); await S.refresh(); renderTopbar(); renderStatusbar(); toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' }); } }] : [])
+  ]);
 }
 
 function renderStatusbar() {
   const w = S.activeWs();
   const proxied = !!(w && w.proxy && w.proxy.enabled);
+  const netItem = el('span', {
+    class: 'status-item',
+    style: { cursor: 'pointer' },
+    title: proxied ? `Workspace traffic goes through ${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port}. Click for network actions.` : 'Each workspace can be routed through its own proxy - click for network actions',
+    ...(w ? { onclick: () => openNetMenu(netItem, w) } : {})
+  },
+    el('span', { class: 'dot' }),
+    el('span', { html: proxied ? `Routed via ${String(w.proxy.scheme).toUpperCase()} proxy` : 'Direct connection' }));
   qs('#statusLeft').replaceChildren(...[
-    el('span', {
-      class: 'status-item',
-      title: proxied ? `Workspace traffic goes through ${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port}` : 'Each workspace can be routed through its own proxy - workspace settings → Network'
+    netItem,
+    ADS_BLOCKED > 0 ? el('span', {
+      class: 'status-item ads', title: 'Blocked by Ad Shield this session (click for the menu)'
     },
-      el('span', { class: 'dot' }),
-      el('span', { html: proxied ? `Routed via ${String(w.proxy.scheme).toUpperCase()} proxy` : 'Direct connection' })),
+      el('span', { html: icon('shieldCheck', 13) }),
+      el('span', { text: `${ADS_BLOCKED} ads blocked` })) : null,
     w ? el('span', { class: 'status-item' }, el('b', { text: `Workspace ${w.num}` }), el('span', { text: w.identity ? w.identity.email : 'no identity yet' })) : null
   ].filter(Boolean));
   qs('#statusRight').replaceChildren(
@@ -118,7 +169,11 @@ function handleEvent({ type, payload }) {
     if (payload.wsId && payload.wsId === S.getActiveWsId()) Tabs.reload(payload.wsId);
     S.refresh().then(() => { renderTopbar(); renderStatusbar(); });
   } else if (type === 'state-changed') {
-    S.refresh().then(() => { renderSidebar(); renderTopbar(); });
+    S.refresh().then(() => { applyUiPrefs(); renderSidebar(); renderTopbar(); });
+  } else if (type === 'ads-blocked') {
+    ADS_BLOCKED = payload.total || 0;
+    updateAdsBadge(ADS_BLOCKED);
+    renderStatusbar();
   } else if (type === 'scene') {
     runScene(payload);
   } else if (type && type.startsWith('update-')) {
@@ -144,6 +199,7 @@ export function runAction(action, extra = {}) {
     case 'toggle-sidebar': import('./sidebar.js').then(m => m.toggleSidebar()); break;
     case 'settings': settingsModal(); break;
     case 'about': settingsModal('about'); break;
+    case 'ext-panel': toggleExtPanel(); break;
     case 'vault': { const p = qs('#vaultPanel'); if (p.classList.contains('hidden')) openVault(wsId); else closeVault(); break; }
     case 'ws-switch': { const w = S.wsByNum(extra.n || 1); if (w) Tabs.switchWorkspace(w.id); break; }
     case 'zoom-in': Tabs.setZoom(wsId, Tabs.getZoom(wsId) * 1.2); break;
@@ -180,6 +236,7 @@ function onChromeKey(e) {
   else if (c && !a && k === 'f') { e.preventDefault(); runAction('find'); }
   else if (c && s && k === 'n') { e.preventDefault(); runAction('new-workspace'); }
   else if (c && !a && k === 'b') { e.preventDefault(); runAction('toggle-sidebar'); }
+  else if (c && s && k === 'e') { e.preventDefault(); runAction('ext-panel'); }
   else if (c && s && k === 'i') { e.preventDefault(); runAction('devtools'); }
   else if (c && !a && k === 'tab') { e.preventDefault(); runAction(s ? 'prev-tab' : 'next-tab'); }
   else if (a && !c && k === 'arrowleft') { e.preventDefault(); runAction('back'); }
@@ -192,9 +249,16 @@ function onChromeKey(e) {
 // top bar buttons
 qs('#vaultBtn').innerHTML = icon('key', 17);
 qs('#settingsBtn').innerHTML = icon('gear', 17);
+qs('#shieldBtn').innerHTML = icon('shield', 17) + '<span class="count-badge hidden"></span>';
+qs('#extBtn').innerHTML = icon('puzzle', 17);
 qs('#vaultBtn').addEventListener('click', () => runAction('vault'));
 qs('#settingsBtn').addEventListener('click', () => settingsModal());
 qs('#logoBtn')?.addEventListener('click', () => settingsModal('about'));
+// the ads status item opens the shield menu
+qs('#statusLeft').addEventListener('click', (e) => {
+  const item = e.target.closest('.status-item.ads');
+  if (item) { e.stopPropagation(); openShieldMenu(item); }
+});
 
 // ---------- dev scene runner (screenshot harness) ----------
 async function runScene(payload) {
@@ -203,6 +267,7 @@ async function runScene(payload) {
   if (name === 'wizard') import('./wizard.js').then(m => m.openWizard(wsId));
   else if (name === 'vault') openVault(wsId);
   else if (name === 'settings') settingsModal();
+  else if (name === 'ext-panel') toggleExtPanel();
   else if (name === 'ws-settings') import('./modals.js').then(m => m.wsSettingsModal(wsId));
   else if (name === 'about') settingsModal('about');
   else if (name === 'ntp') Tabs.navigate(wsId, `pigeonhole://newtab?ws=${wsId}`);

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     rename: (wsId, name) => invoke('ph:ws-rename', wsId, name),
     setHue: (wsId, hue) => invoke('ph:ws-set-hue', wsId, hue),
     setProxy: (wsId, cfg) => invoke('ph:ws-set-proxy', wsId, cfg),
+    testProxy: (wsId, url) => invoke('ph:ws-test-proxy', wsId, url),
     clearData: (wsId) => invoke('ph:ws-clear-data', wsId)
   },
   tabs: { save: (wsId, tabs) => invoke('ph:tabs-save', wsId, tabs) },
@@ -38,7 +39,10 @@ contextBridge.exposeInMainWorld('pigeonhole', {
   },
   extensions: {
     list: () => invoke('ph:ext-list'),
-    setEnabled: (id, on) => invoke('ph:ext-set-enabled', id, on)
+    setEnabled: (id, on) => invoke('ph:ext-set-enabled', id, on),
+    setConfig: (cfg) => invoke('ph:ext-set-config', cfg),
+    getConfig: () => invoke('ph:ext-get-config'),
+    adsCount: () => invoke('ph:ads-count')
   },
   app: {
     open: (kind) => invoke('ph:app-open', kind),

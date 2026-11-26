@@ -20,10 +20,13 @@ export function renderSidebar() {
       role: 'option', 'aria-selected': w.id === S.getActiveWsId() ? 'true' : 'false',
       title: '',
       style: { '--h': w.hue },
+      'data-ws': w.id,
       onclick: () => { if (S.getActiveWsId() !== w.id) Tabs.switchWorkspace(w.id); },
       oncontextmenu: (e) => { e.preventDefault(); tileMenu(e, w); }
     },
-      el('span', { text: w.num })
+      el('span', { text: w.num }),
+      // small status dot: this workspace exits through its own proxy
+      w.proxy && w.proxy.enabled ? el('span', { class: 'net-dot', title: `Routed via ${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port}` }) : null
     );
     tile.addEventListener('mouseenter', () => showTip(tile, w));
     tile.addEventListener('mouseleave', hideTip);
@@ -63,6 +66,7 @@ let tipEl = null, tipTimer = null;
 function showTip(tile, w) {
   hideTip();
   tipTimer = setTimeout(() => {
+    const proxied = w.proxy && w.proxy.enabled;
     tipEl = el('div', {
       class: 'tip',
       style: {
@@ -71,7 +75,11 @@ function showTip(tile, w) {
         borderRadius: '8px', padding: '6px 10px', fontSize: '11.5px', color: 'var(--text)',
         boxShadow: 'var(--shadow-pop)', pointerEvents: 'none', lineHeight: 1.45
       },
-      html: `<b>${escapeHtml(w.name)}</b><br><span style="color:var(--text-faint)">${w.identity ? escapeHtml(w.identity.email) : 'No email yet — click + to set one up'}</span>`
+      html: `<b>${escapeHtml(w.name)}</b><br>` +
+        `<span style="color:var(--text-faint)">${w.identity ? escapeHtml(w.identity.email) : 'No email yet — click + to set one up'}</span>` +
+        (proxied
+          ? `<br><span style="color:var(--accent)">exit: ${escapeHtml(String(w.proxy.scheme).toUpperCase())} ${escapeHtml(w.proxy.host)}:${w.proxy.port}</span>`
+          : `<br><span style="color:var(--text-faint)">direct connection</span>`)
     });
     document.body.append(tipEl);
     const r = tile.getBoundingClientRect();
@@ -197,4 +205,21 @@ export function initSidebar() {
   qs('#collapseBtn').addEventListener('click', toggleSidebar);
   qs('#expandBtn').addEventListener('click', toggleSidebar);
   bus.on('ws-updated', () => renderSidebar());
+
+  // fading switch trail (Opera GX style): the tile you leave keeps a short
+  // glow in its own hue while the new workspace takes over
+  let lastActive = null;
+  bus.on('ws-activated', ({ wsId, fromBoot }) => {
+    try {
+      const anim = S.settings().wsAnim !== false;
+      if (anim && !fromBoot && lastActive && lastActive !== wsId) {
+        const prev = qs(`#wsTiles .ws-tile[data-ws="${lastActive}"]`);
+        if (prev) {
+          prev.classList.add('trail');
+          setTimeout(() => prev.classList.remove('trail'), 1000);
+        }
+      }
+    } catch { }
+    lastActive = wsId;
+  });
 }

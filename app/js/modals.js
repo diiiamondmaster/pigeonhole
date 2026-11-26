@@ -66,7 +66,7 @@ export function confirmModal({ title, body, actionLabel = 'Confirm', danger = fa
 // Settings
 // =====================================================================
 const TABS_LIST = [
-  ['general', 'General'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
+  ['general', 'General'], ['appearance', 'Appearance'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
   ['extensions', 'Extensions'], ['privacy', 'Data & privacy'], ['about', 'About']
 ];
 
@@ -115,6 +115,20 @@ export async function settingsModal(activeTab = 'general') {
       );
     },
 
+    appearance: () => el('div', {},
+      section('Scale',
+        field('Interface scale',
+          el('div', { class: 'seg' }, [['compact', 'Compact'], ['normal', 'Normal'], ['large', 'Large']].map(([k, l]) =>
+            el('button', { class: st.uiScale === k ? 'on accent' : '', text: l, onclick: async () => { await PH().settings.set({ uiScale: k }); await S.refresh(); applyUiFromChrome(); settingsModal('appearance'); } })))),
+        field('Workspace tiles',
+          el('div', { class: 'seg' }, [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']].map(([k, l]) =>
+            el('button', { class: st.tileSize === k ? 'on accent' : '', text: l, onclick: async () => { await PH().settings.set({ tileSize: k }); await S.refresh(); applyUiFromChrome(); settingsModal('appearance'); } }))))),
+      section('Workspace switching',
+        toggleRow('Fading switch trail',
+          'Switching workspaces leaves a short fading glow on the tile you left, in that workspace\u2019s colour.',
+          st.wsAnim !== false, async (v) => { await PH().settings.set({ wsAnim: v }); await S.refresh(); }),
+        el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', lineHeight: '1.55' }, text: 'The active workspace is also called out three more ways, always on: the hue line under the top bar, the highlighted tile, and the status bar text.' }))),
+
     onboarding: () => el('div', {},
       section('Wizard behaviour',
         toggleRow('Autofill the signup form automatically',
@@ -132,8 +146,8 @@ export async function settingsModal(activeTab = 'general') {
 
     extensions: () => el('div', {},
       section('Built-in extensions',
-        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'Extensions are small features that run inside Pigeonhole and apply to every workspace. Each one is switched on or off individually, takes effect immediately, and there are no installs or external stores - everything ships with the app.' })),
-      ...exts.map(x => extCard(x))),
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'Extensions are small features that run inside Pigeonhole and apply to every workspace. Each one is switched on or off individually, takes effect immediately, and there are no installs or external stores - everything ships with the app. The puzzle button in the top bar opens the same list as a quick panel.' })),
+      ...exts.map(x => extCard(x, st))),
 
     privacy: () => el('div', {},
       section('What Pigeonhole stores',
@@ -209,19 +223,48 @@ export async function wsSettingsModal(wsId) {
   const passIn = el('input', { class: 'input mono', type: 'password', placeholder: p.hasPassword ? 'saved - type to replace' : 'password (optional)' });
   const bypassIn = el('input', { class: 'input mono span2', placeholder: 'bypass list, e.g. *.company.com;<local>', value: p.bypass || '' });
 
+  // duplicate-exit warning: another workspace already exits through the
+  // exact same proxy -> accounts would share an IP
+  const dupOf = () => S.workspaces().find(x =>
+    x.id !== w.id && x.proxy && x.proxy.enabled &&
+    String(x.proxy.host || '').toLowerCase() === String(hostIn.value || '').trim().toLowerCase() &&
+    Number(x.proxy.port) === Number(portIn.value) &&
+    (x.proxy.scheme === 'socks5') === (scheme === 'socks5'));
+  const dupWarn = el('div', { class: 'pill danger', style: { display: 'none', marginTop: '10px' } });
+  const syncDup = () => {
+    const o = proxyChk.checked ? dupOf() : null;
+    dupWarn.style.display = o ? '' : 'none';
+    dupWarn.textContent = o ? `Workspace ${o.num} already exits through this exact proxy - both would share one IP.` : '';
+  };
+
+  // live exit-IP probe: fetches an IP service through THIS workspace's session
+  const ipOut = el('div', { class: 'hint', style: { marginTop: '8px', minHeight: '14px' }, text: '' });
+  const testIpBtn = el('button', {
+    class: 'btn btn-sm', html: icon('globe', 13) + ' Test exit IP', title: 'Asks an IP service through this workspace\u2019s connection',
+    onclick: async () => {
+      ipOut.textContent = 'Testing…';
+      const r = await PH().workspaces.testProxy(w.id);
+      if (r?.ok) ipOut.textContent = `Exit IP: ${r.ip} · ${r.ms || 0} ms · via ${r.via}`;
+      else ipOut.textContent = `Test failed - ${r?.error || 'no answer'}`;
+    }
+  });
+
   const proxyChk = el('input', { type: 'checkbox' });
   proxyChk.checked = !!p.enabled;
   const schemeSeg = el('div', { class: 'seg span2' }, [['socks5', 'SOCKS5'], ['http', 'HTTP']].map(([k, l]) =>
     el('button', {
       class: scheme === k ? 'on accent' : '', text: l,
-      onclick: () => { scheme = k; [...schemeSeg.children].forEach((b, i) => b.classList.toggle('on', i === (k === 'socks5' ? 0 : 1))); [...schemeSeg.children].forEach(b => b.classList.toggle('accent', b.classList.contains('on'))); }
+      onclick: () => { scheme = k; [...schemeSeg.children].forEach((b, i) => b.classList.toggle('on', i === (k === 'socks5' ? 0 : 1))); [...schemeSeg.children].forEach(b => b.classList.toggle('accent', b.classList.contains('on'))); syncDup(); }
     })));
   const proxyFields = el('div', { class: 'proxy-grid' }, schemeSeg, hostIn, portIn, userIn, passIn, bypassIn);
   const syncProxyFields = () => {
     proxyFields.style.opacity = proxyChk.checked ? '' : '0.45';
     proxyFields.querySelectorAll('input, button').forEach(x => { x.disabled = !proxyChk.checked; });
+    syncDup();
   };
   proxyChk.addEventListener('change', syncProxyFields);
+  hostIn.addEventListener('input', syncDup);
+  portIn.addEventListener('input', syncDup);
 
   const netSection = section('Network',
     el('label', { class: 'row between', style: { padding: '9px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer', marginBottom: '10px' } },
@@ -233,6 +276,11 @@ export async function wsSettingsModal(wsId) {
       el('span', { class: 'net-chip ' + (p.enabled ? 'proxy' : 'direct') }, el('span', { class: 'dot' }),
         el('span', { text: p.enabled ? `Routed via ${p.scheme.toUpperCase()} ${p.host}:${p.port}` : 'Direct connection - your own IP' }))),
     proxyFields,
+    el('div', { class: 'row', style: { marginTop: '10px', flexWrap: 'wrap', gap: '8px', alignItems: 'center' } },
+      testIpBtn,
+      el('span', { class: 'hint', style: { margin: '0' }, text: 'Proves the real exit IP this workspace uses right now.' })),
+    ipOut,
+    dupWarn,
     el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'SOCKS5 or HTTP proxy, with optional credentials (stored encrypted like the vault). Applies immediately and reloads the open tab. Bypass list follows Chromium rules; leave empty for just <local>.' }));
   syncProxyFields();
 
@@ -285,7 +333,15 @@ export async function wsSettingsModal(wsId) {
               keepPassword: !passIn.value && !!p.hasPassword,
               bypass: bypassIn.value.trim()
             });
-            toast({ title: `Workspace ${w.num} routed`, sub: `${scheme.toUpperCase()} ${host}:${port} - the open tab reloads through it.`, type: 'success', ic: 'check' });
+            await S.refresh();
+            const other = S.workspaces().find(x => x.id !== w.id && x.proxy && x.proxy.enabled &&
+              String(x.proxy.host).toLowerCase() === host.toLowerCase() && Number(x.proxy.port) === port &&
+              x.proxy.scheme === scheme);
+            toast({
+              title: other ? `Workspace ${w.num} routed - but so is ${other.num}` : `Workspace ${w.num} routed`,
+              sub: other ? 'Both exit through the same proxy, so those accounts share one IP. Change one of them if that was not the plan.' : `${scheme.toUpperCase()} ${host}:${port} - the open tab reloads through it.`,
+              type: other ? 'warn' : 'success', ic: other ? 'warn' : 'check', timeout: other ? 8000 : 5000
+            });
           } else if (p.enabled) {
             await PH().workspaces.setProxy(w.id, { enabled: false });
             toast({ title: `Workspace ${w.num} is back on a direct connection`, type: 'success', ic: 'check' });
@@ -328,9 +384,9 @@ function switchEl(value, onChange) {
   return el('span', { class: 'switch' }, input, el('i', {}));
 }
 
-// extension card for Settings > Extensions
-function extCard(x) {
-  return el('div', { class: 'ext-card' },
+// extension card for Settings > Extensions (+ quick panel)
+function extCard(x, st = {}) {
+  const card = el('div', { class: 'ext-card' },
     el('div', { class: 'row between', style: { alignItems: 'flex-start', gap: '10px' } },
       el('div', { class: 'grow' },
         el('div', { class: 'row', style: { gap: '6px', alignItems: 'center', flexWrap: 'wrap' } },
@@ -346,4 +402,22 @@ function extCard(x) {
           toast({ title: 'Could not switch the extension', sub: String(e?.message || e), type: 'error', ic: 'warn' });
         }
       })));
+
+  if (x.id === 'adshield') {
+    const level = st.adshield?.level || x.config?.level || 'standard';
+    const sites = st.adshield?.sites || {};
+    const n = Object.keys(sites).length;
+    card.append(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginTop: '9px' } },
+      el('div', { class: 'seg' }, [['basic', 'Basic'], ['standard', 'Standard'], ['strict', 'Strict']].map(([k, l]) =>
+        el('button', { class: k === level ? 'on accent' : '', text: l, onclick: async () => { await PH().extensions.setConfig({ level: k }); await S.refresh(); settingsModal('extensions'); } }))),
+      n ? el('span', { class: 'pill muted', text: `${n} site rule${n > 1 ? 's' : ''}` }) : null,
+      n ? el('button', { class: 'btn btn-sm', text: 'Reset site rules', onclick: async () => { await PH().extensions.setConfig({ resetSites: true }); await S.refresh(); settingsModal('extensions'); } }) : null));
+  }
+  if (x.id === 'videospeed') {
+    card.append(el('div', { class: 'hint', style: { marginTop: '8px' }, text: 'S slower · D faster · R reset · V show/hide · Z/X seek ±10s · G remember speed for this site' }));
+  }
+  return card;
 }
+
+// appearance changes re-apply live: the chrome listens on the bus
+function applyUiFromChrome() { bus.emit('chrome-updated'); }

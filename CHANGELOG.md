@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.1.0-beta.2 - 2026-11-26 (beta channel)
+
+The beta that makes the 1.1 line visible: proxies are now impossible to
+miss, the extension panel lives one click away, two more extensions ship
+(Video Speed and Ad Shield), and the chrome itself gets Appearance settings.
+
+- **Proxy routing, discoverable at last.** The top-bar *Direct/Proxy* chip
+  and the status-bar route are now clickable menus with **Test exit IP** -
+  it fetches an IP service through the workspace's own connection and shows
+  the answer with the route it took, so you can prove the exit without
+  guesswork. The top-bar workspace chip opens its settings, workspace tiles
+  get a small dot when routed, the sidebar tooltip names the exit, and
+  saving a proxy that another workspace already uses raises a
+  duplicate-exit warning (they would share an IP). The workspace-settings
+  Network section carries a *Test exit IP* button too.
+- **Extensions, one click away.** A puzzle button in the top bar (or
+  Ctrl+Shift+E) opens a quick panel: live toggles for every extension, the
+  Ad Shield level presets, a per-site pause for the page you are on, and
+  the session's blocked-ads count. Settings → Extensions keeps the full
+  cards.
+- **New extension: Video Speed.** A built-in Video Speed Controller:
+  hover any video for the speed badge and controller (S slower, D faster,
+  R reset, V show/hide, Z/X seek ±10s, G remembers a speed for that site).
+  Works in every workspace, remembers per-site speeds inside each
+  workspace's own profile.
+- **New extension: Ad Shield.** Ad blocking with levels and a visible
+  counter. *Basic* blocks tracking beacons; *Standard* removes common ad
+  networks and (best effort) YouTube ad slots; *Strict* adds aggressive
+  URL-pattern blocking plus cosmetic hiding. Per-page control from the
+  right-click menu or the shield button; the toolbar shield shows the
+  blocked count and the status bar surfaces it when non-zero.
+- **History Guard removed.** The 1.1.0-beta.1 experiment is gone - history
+  just works as it did before.
+- **Appearance settings.** Settings → Appearance: interface scale
+  (compact/normal/large), workspace tile size (small/normal/large), and the
+  workspace-switch animation toggle.
+- **Clearer active workspace.** A hue line under the top bar in the active
+  workspace's colour, brighter active tile, and a fading switch trail on
+  the tile you leave (Opera GX style; can be turned off in Appearance).
+- E2E coverage: proxy routing proofs against a real local proxy (including
+  the exit-IP channel), the injection suite for Video Speed / Ad Shield,
+  and the extension config surface.
+
 ## 1.1.0-beta.1 - 2026-11-26 (beta channel)
 
 The 1.1 line opens: proxy routing, the extension system, and spell check. This

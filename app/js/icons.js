@@ -37,7 +37,9 @@ const PATHS = {
   docs: '<path d="M4 19.2A2.5 2.5 0 0 1 6.5 16.7H20"/><path d="M6.5 2.3H20v19.4H6.5A2.5 2.5 0 0 1 4 19.2V4.8a2.5 2.5 0 0 1 2.5-2.5z"/>',
   logo: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="2"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="2"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="2"/><rect x="13" y="13" width="7.5" height="7.5" rx="2" fill="currentColor" stroke="none"/>',
   history: '<path d="M3.5 12a8.5 8.5 0 1 1 2.5 6"/><polyline points="3.5 12 3.5 12"/><polyline points="3 17.5 3.5 12 9 12.5"/>',
-  puzzle: '<path d="M10 3.5a1.8 1.8 0 0 1 3.6 0V5h3.4a1 1 0 0 1 1 1v3.4h1.5a1.8 1.8 0 0 1 0 3.6H18v4.5a1 1 0 0 1-1 1h-4v-1.7a1.8 1.8 0 0 0-3.6 0v1.7H5.5a1 1 0 0 1-1-1V14h1.2a1.8 1.8 0 0 0 0-3.6H4.5V6a1 1 0 0 1 1-1H10z"/>'
+  puzzle: '<path d="M10 3.5a1.8 1.8 0 0 1 3.6 0V5h3.4a1 1 0 0 1 1 1v3.4h1.5a1.8 1.8 0 0 1 0 3.6H18v4.5a1 1 0 0 1-1 1h-4v-1.7a1.8 1.8 0 0 0-3.6 0v1.7H5.5a1 1 0 0 1-1-1V14h1.2a1.8 1.8 0 0 0 0-3.6H4.5V6a1 1 0 0 1 1-1H10z"/>',
+  speed: '<path d="M4.5 16.5a8.5 8.5 0 1 1 15 0"/><line x1="12" y1="14.5" x2="15.2" y2="9.4"/><circle cx="12" cy="15" r="1.1" fill="currentColor" stroke="none"/>',
+  shieldCheck: '<path d="M12 21.5s7.5-3.3 7.5-9.4V5.3L12 2.5l-7.5 2.8v6.8c0 6.1 7.5 9.4 7.5 9.4z"/><polyline points="8.7 11.6 11.3 14.2 15.5 9.8"/>'
 };
 
 export function icon(name, size = 18) {

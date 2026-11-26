@@ -29,8 +29,16 @@ const DEFAULT_SETTINGS = {
   extensions: {                 // built-in extension toggles (Settings > Extensions)
     spellcheck: true,
     trackershield: true,
-    historyguard: false
+    videospeed: true,
+    adshield: true
   },
+  adshield: {                   // Ad Shield: blocking level + per-site overrides
+    level: 'standard',           // basic | standard | strict
+    sites: {}                    // 'https://host' -> 'off' | 'basic' | 'standard' | 'strict'
+  },
+  uiScale: 'normal',             // compact | normal | large  (whole chrome zoom)
+  tileSize: 'normal',            // small | normal | large     (sidebar workspace tiles)
+  wsAnim: true,                  // fading switch trail on workspace tiles
   vaultEncrypted: false,
   downloadsDir: ''
 };
@@ -62,6 +70,17 @@ class Store {
           this.state = { ...defaultState(), ...raw, settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) } };
           // extension toggles merge per-key so older stores keep new defaults
           this.state.settings.extensions = { ...DEFAULT_SETTINGS.extensions, ...(raw.settings?.extensions || {}) };
+          // 1.1.0-beta.2: History Guard was removed from the extension set
+          delete this.state.settings.extensions.historyguard;
+          // adshield config shape + appearance prefs normalize per-key
+          const ds = DEFAULT_SETTINGS.adshield;
+          this.state.settings.adshield = {
+            level: ['basic', 'standard', 'strict'].includes(raw.settings?.adshield?.level) ? raw.settings.adshield.level : ds.level,
+            sites: (raw.settings?.adshield?.sites && typeof raw.settings.adshield.sites === 'object') ? raw.settings.adshield.sites : {}
+          };
+          this.state.settings.uiScale = ['compact', 'normal', 'large'].includes(raw.settings?.uiScale) ? raw.settings.uiScale : 'normal';
+          this.state.settings.tileSize = ['small', 'normal', 'large'].includes(raw.settings?.tileSize) ? raw.settings.tileSize : 'normal';
+          this.state.settings.wsAnim = raw.settings?.wsAnim === undefined ? true : !!raw.settings.wsAnim;
           if (!this.state.ui) this.state.ui = defaultState().ui;
           if (!this.state.tabs) this.state.tabs = {};
           if (!this.state.history) this.state.history = {};
@@ -310,9 +329,13 @@ class Store {
   // ---------- settings ----------
   setSettings(patch) {
     const allowed = ['searchEngine', 'identityMode', 'identityBase', 'identityPadding', 'identityStart',
-      'pwLength', 'pwSymbols', 'autoFillOnLoad', 'autoDetectSuccess', 'betaUpdates', 'downloadsDir'];
+      'pwLength', 'pwSymbols', 'autoFillOnLoad', 'autoDetectSuccess', 'betaUpdates', 'downloadsDir',
+      'uiScale', 'tileSize', 'wsAnim'];
     for (const k of allowed) {
       if (k in patch) this.state.settings[k] = patch[k];
+    }
+    if (typeof patch.adshieldLevel === 'string' && ['basic', 'standard', 'strict'].includes(patch.adshieldLevel)) {
+      this.state.settings.adshield.level = patch.adshieldLevel;
     }
     this.save();
     return this.getSettings();
@@ -323,7 +346,9 @@ class Store {
       searchEngine: s.searchEngine, identityMode: s.identityMode, identityBase: s.identityBase,
       identityPadding: s.identityPadding, identityStart: s.identityStart, pwLength: s.pwLength,
       pwSymbols: s.pwSymbols, autoFillOnLoad: s.autoFillOnLoad, autoDetectSuccess: s.autoDetectSuccess,
-      betaUpdates: !!s.betaUpdates, vaultEncrypted: s.vaultEncrypted, downloadsDir: s.downloadsDir, hasSharedPassword: !!s.sharedPassword
+      betaUpdates: !!s.betaUpdates, vaultEncrypted: s.vaultEncrypted, downloadsDir: s.downloadsDir, hasSharedPassword: !!s.sharedPassword,
+      uiScale: s.uiScale, tileSize: s.tileSize, wsAnim: !!s.wsAnim,
+      adshield: { level: s.adshield.level, sites: { ...s.adshield.sites } }
     };
   }
   setSharedPassword(pw) {

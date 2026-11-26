@@ -2,7 +2,7 @@
 // Inputs are validated (workspace ids must match a strict pattern, URLs must be
 // http(s), strings are length-capped) and secrets never travel to the renderer
 // except through the explicit vault-secret channels.
-const { ipcMain, dialog, shell, app, session } = require('electron');
+const { ipcMain, dialog, shell, app, session, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { cancelDownload } = require('./downloads');
@@ -109,6 +109,53 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     return saved;
   });
 
+  // Exit-IP test: fetches an IP echo service THROUGH the workspace's own
+  // session, so the answer proves which exit the traffic really takes.
+  // Default service is api.ipify.org; the sandbox tests pass a local URL.
+  ipcMain.handle('ph:ws-test-proxy', async (_e, wsId, url) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    const ws = store.getWorkspace(wsId);
+    if (!ws) throw bad('no such workspace');
+    const target = isHttpUrl(url) ? String(url).slice(0, 500) : 'https://api.ipify.org/?format=json';
+    const ses = session.fromPartition('persist:' + wsId);
+    const via = (ws.proxy && ws.proxy.enabled)
+      ? `${ws.proxy.scheme}://${ws.proxy.host}:${ws.proxy.port}`
+      : 'direct';
+    const t0 = Date.now();
+    try {
+      const res = await new Promise((resolve, reject) => {
+        let settled = false;
+        const req = net.request({ url: target, session: ses });
+        req.setHeader('User-Agent', 'pigeonhole-exit-ip-test');
+        const to = setTimeout(() => {
+          if (settled) return; settled = true;
+          try { req.destroy(); } catch { }
+          reject(new Error('timed out after 9s'));
+        }, 9000);
+        const chunks = [];
+        req.on('response', (r) => {
+          r.on('data', (c) => chunks.push(c));
+          r.on('end', () => {
+            if (settled) return; settled = true; clearTimeout(to);
+            resolve({ status: r.statusCode, body: Buffer.concat(chunks) });
+          });
+          r.on('aborted', () => { if (!settled) { settled = true; clearTimeout(to); reject(new Error('connection interrupted')); } });
+        });
+        req.on('error', (e) => { if (!settled) { settled = true; clearTimeout(to); reject(e); } });
+        req.end();
+      });
+      if (res.status !== 200) throw new Error('the service answered HTTP ' + res.status);
+      const text = res.body.toString('utf8');
+      let ip = null;
+      try { ip = JSON.parse(text).ip || null; } catch { }
+      if (!ip) { const m = /\b((?:\d{1,3}\.){3}\d{1,3})\b/.exec(text); if (m) ip = m[1]; }
+      if (!ip) throw new Error('no IP found in the answer');
+      return { ok: true, ip, ms: Date.now() - t0, via };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e), via };
+    }
+  });
+
   // ---------- built-in extensions ----------
   ipcMain.handle('ph:ext-list', () => extensions.list());
 
@@ -117,6 +164,18 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (!ok) throw bad('unknown extension');
     return extensions.list();
   });
+
+  // Ad Shield config: level presets + per-site overrides
+  ipcMain.handle('ph:ext-set-config', (_e, cfg) => {
+    if (!cfg || typeof cfg !== 'object') throw bad('bad config');
+    const ok = extensions.setConfig(cfg);
+    if (!ok) throw bad('bad adshield config');
+    return extensions.getConfig();
+  });
+
+  ipcMain.handle('ph:ext-get-config', () => extensions.getConfig());
+
+  ipcMain.handle('ph:ads-count', () => extensions.adsCounts());
 
   // ---------- tabs & history ----------
   ipcMain.handle('ph:tabs-save', (_e, wsId, tabs) => {
@@ -127,8 +186,6 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
 
   ipcMain.handle('ph:history-add', (_e, wsId, entry) => {
     if (!WS_ID.test(wsId || '')) throw bad('bad id');
-    // History Guard extension: stop recording page visits when it is on
-    if (extensions.extEnabled('historyguard')) return true;
     if (entry && isHttpUrl(entry.url)) {
       // titles come from web pages - keep them from smuggling markup into the NTP
       store.addHistory(wsId, { url: entry.url, title: str(entry.title, 200).replace(/[<>]/g, '') });
@@ -154,6 +211,10 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (patch.autoDetectSuccess != null) out.autoDetectSuccess = !!patch.autoDetectSuccess;
     if (patch.betaUpdates != null) out.betaUpdates = !!patch.betaUpdates;
     if (typeof patch.downloadsDir === 'string') out.downloadsDir = str(patch.downloadsDir, 500);
+    if (typeof patch.uiScale === 'string') out.uiScale = ['compact', 'normal', 'large'].includes(patch.uiScale) ? patch.uiScale : 'normal';
+    if (typeof patch.tileSize === 'string') out.tileSize = ['small', 'normal', 'large'].includes(patch.tileSize) ? patch.tileSize : 'normal';
+    if (patch.wsAnim != null) out.wsAnim = !!patch.wsAnim;
+    if (typeof patch.adshieldLevel === 'string') out.adshieldLevel = ['basic', 'standard', 'strict'].includes(patch.adshieldLevel) ? patch.adshieldLevel : 'standard';
     return store.setSettings(out);
   });
 
