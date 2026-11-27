@@ -109,6 +109,26 @@ function buildWebview(wsId, tab) {
       PH().history.add(wsId, { url, title: tab.title });
       refreshSoon();
     }
+    // Google's "unusual traffic" wall is IP-based: once per tab, a pool-routed
+    // workspace rotates its exit and retries; if it persists we say so instead
+    // of looping. Non-pool routes get the honest explanation only.
+    if (/^https:\/\/(www\.)?google\.[a-z.]+\/sorry\//i.test(url) && !tab.gwallNoted) {
+      tab.gwallNoted = true;
+      const ws = S.ws(wsId);
+      if (ws && ws.proxy && ws.proxy.mode === 'auto') {
+        if (!tab.gwallRetried) {
+          tab.gwallRetried = true;
+          PH().pool.rotate(wsId).then(() => {
+            // proxy-applied reloads this workspace's active page; if the wall
+            // was on a background tab, drive it from here
+            try { if (!isActiveTab(wsId, tab)) wv.loadURL(url); } catch { }
+          }).catch(() => { });
+          toast({ title: 'Google put up an \u201cunusual traffic\u201d wall', sub: 'Shared exits trip it. Pigeonhole rotated to another exit and is retrying - if it persists, try DuckDuckGo for a few minutes.', type: 'info', ic: 'warn', timeout: 7000 });
+        }
+      } else {
+        toast({ title: 'Google put up an \u201cunusual traffic\u201d wall', sub: 'It is tied to this exit\u2019s IP. Rotate the proxy (top bar \u2192 network menu) or use DuckDuckGo for a few minutes.', type: 'info', ic: 'warn', timeout: 7000 });
+      }
+    }
     bus.emit('page-nav', { wsId, tabId: tab.id, tab, wv, url, prev });
     render(wsId);
     if (isActiveTab(wsId, tab)) bus.emit('active-tab-updated', { wsId, tab });

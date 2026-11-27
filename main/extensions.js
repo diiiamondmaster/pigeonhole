@@ -25,10 +25,11 @@ const { store } = require('./store');
 
 // ---- injected content scripts (packed with the app, read once at boot) ----
 const INJECT_DIR = path.join(__dirname, '..', 'app', 'inject');
-let VSC_SRC = '', ADS_SRC = '';
+let VSC_SRC = '', ADS_SRC = '', GCN_SRC = '';
 function loadInjectSources() {
   try { VSC_SRC = fs.readFileSync(path.join(INJECT_DIR, 'videospeed.js'), 'utf8'); } catch (e) { console.error('[ext] videospeed.js missing', e.message); }
   try { ADS_SRC = fs.readFileSync(path.join(INJECT_DIR, 'adshield.js'), 'utf8'); } catch (e) { console.error('[ext] adshield.js missing', e.message); }
+  try { GCN_SRC = fs.readFileSync(path.join(INJECT_DIR, 'gconsent.js'), 'utf8'); } catch (e) { console.error('[ext] gconsent.js missing', e.message); }
 }
 
 // ===================== blocking lists =====================
@@ -145,6 +146,13 @@ const BUILTIN = [
     version: '1.0.0',
     defaultEnabled: true,
     description: 'Ad blocking with levels: Basic stops tracking beacons; Standard removes common ad networks and, best effort, YouTube ad slots; Strict adds aggressive pattern blocking and cosmetic hiding. Per-site override lives in the toolbar shield button and the right-click menu.'
+  },
+  {
+    id: 'gconsent',
+    name: 'Google Consent Helper',
+    version: '1.0.0',
+    defaultEnabled: true,
+    description: 'Google\'s "Before you continue" cookie wall stops covering the page: on Google and YouTube properties the consent wall is dismissed automatically (preferring "Reject all"), so you land straight on the content. Shared-exit "unusual traffic" pages are still Google\'s call - those get a one-click exit rotation instead.'
   }
 ];
 
@@ -314,6 +322,11 @@ async function injectForGuest(wc) {
   if (ADS_SRC) {
     const css = adshieldCssFor(origin);
     try { await wc.executeJavaScript('(' + ADS_SRC + ')(' + JSON.stringify(css) + ');void 0', false); } catch { }
+  }
+  // Google consent wall: one pass at dom-ready, no state, no toggle needed
+  // beyond the extension switch
+  if (GCN_SRC && extEnabled('gconsent')) {
+    try { await wc.executeJavaScript(GCN_SRC + ';void 0', false); } catch { }
   }
 }
 
