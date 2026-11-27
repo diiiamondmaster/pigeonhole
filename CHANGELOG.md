@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.1.0 - 2026-11-27 (stable)
+
+The whole 1.1.0 line, promoted from six beta rounds to the main update
+channel. From 1.0.6, in one update:
+
+- **Per-workspace proxy routing, automatic.** Free community proxy pool with
+  verification, scoring and proactive failover; or bring your own
+  SOCKS5/HTTP proxy per workspace. Browsing never silently degrades.
+- **Built-in extensions.** Video Speed Control, Ad Shield with levels and
+  per-site pause, spell check, quick panel.
+- **Email that asks for nothing personal.** The wizard walks a no-phone
+  provider signup (Atomic Mail by default), generates the identity, fills
+  the form; Google consent walls and unusual-traffic walls are handled
+  automatically. The beta.5 disposable-address experiment was removed again
+  in beta.6 - real providers only.
+- **Mail backups, captured per workspace.** Backup/recovery files from your
+  mail providers are recognized on download, kept out of the Downloads
+  folder and stored with the workspace that owns the mailbox, including a
+  legacy sweep of existing Downloads files.
+- **The chrome polished.** Fullscreen that actually fills the window; the
+  statusbar flush with the bottom at every zoom; a reload button that
+  retries the page you wanted, not the error page; workspace trails that
+  shrink and fade with your switching history - and whose length follows
+  the workspace count (short trails for few workspaces, since you cannot
+  be far "back" anyway); drag-to-reorder tiles with self-healing numbers.
+- **The exe has its icon back.** Every zip since the build moved to the
+  manual reproducible script shipped with Electron's generic icon - the
+  amber pigeonhole mark and a proper version stamp are embedded into
+  Pigeonhole.exe again.
+- Plus: live-applied settings, page-result feedback for seamless proxy
+  rotation, update self-service with staged downloads, and a 172-check
+  E2E battery over the whole stack.
+
 ## 1.1.0-beta.6 - 2026-11-27 (beta channel)
 
 Fixes for the beta feedback that piled up: the disposable-email experiment is

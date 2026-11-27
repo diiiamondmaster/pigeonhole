@@ -23,7 +23,7 @@ adds on top:
 - **Isolated workspaces.** Each workspace has its own cookies, cache,
   localStorage, IndexedDB and service workers. Nothing crosses over - you can
   be signed in to the same site in five workspaces at the same time.
-- **Per-workspace proxy routing, automatic (beta line).** Workspaces can exit
+- **Per-workspace proxy routing, automatic.** Workspaces can exit
   through the built-in **free proxy pool**: Pigeonhole fetches public
   community proxy lists, verifies each candidate with a real content fetch
   (not just a ping - "answers a ping but can't carry a page" proxies are
@@ -37,7 +37,7 @@ adds on top:
   the exit. Community exits: HTTPS stays end-to-end encrypted, but the
   volunteer operator sees plain-HTTP and the exit IP is theirs. Turn on
   *Beta updates* (Settings → About) to ride the 1.1 line.
-- **Built-in extensions (beta line).** Small features that ship inside the app,
+- **Built-in extensions.** Small features that ship inside the app,
   each switched on or off individually - from the puzzle button in the top
   bar or Settings → Extensions: a spell checker with right-click corrections,
   a tracker/ad-beacon shield, **Video Speed** (a Video Speed Controller for
@@ -45,18 +45,19 @@ adds on top:
   (ad blocking with Basic/Standard/Strict levels, per-site pause, and a
   visible blocked count), and **Google Consent Helper** (auto-dismisses the
   "Before you continue" cookie wall on Google and YouTube pages).
-- **Appearance settings (beta line).** Interface scale and workspace tile
+- **Appearance settings.** Interface scale and workspace tile
   size are adjustable in Settings → Appearance; the active workspace is
   called out with a hue line under the top bar, and each tile carries a
   recency trail - a bar that shrinks and fades the further back in your
-  switching history it is.
+  switching history it is. The trail's length follows your workspace count:
+  few workspaces, short trails.
 - **Guided email setup, Atomic Mail by default.** Creating the Nth mailbox is
   a wizard: Atomic Mail is preselected (no phone, nothing personal, works
   well from shared exits), or pick another no-phone provider, generate a
   numbered address (`yourhandle001`, `yourhandle002`, ...), and let
   Pigeonhole fill the signup form. You solve the CAPTCHA and press Create -
   the account is born inside the very workspace it will live in.
-- **Mail backups, captured per workspace (beta line).** No-phone providers
+- **Mail backups, captured per workspace.** No-phone providers
   hand out backup and recovery files (Tuta's container, key exports).
   Pigeonhole recognizes those downloads, keeps them out of your Downloads
   folder and stores them with the workspace that owns the mailbox - and can
