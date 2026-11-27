@@ -66,9 +66,134 @@ export function confirmModal({ title, body, actionLabel = 'Confirm', danger = fa
 // Settings
 // =====================================================================
 const TABS_LIST = [
-  ['general', 'General'], ['appearance', 'Appearance'], ['network', 'Network'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
+  ['general', 'General'], ['appearance', 'Appearance'], ['network', 'Network'], ['sync', 'Sync'], ['identity', 'Identities'], ['onboarding', 'Onboarding'],
   ['extensions', 'Extensions'], ['privacy', 'Data & privacy'], ['about', 'About']
 ];
+
+// ---- beta.7: sync + app lock helpers ----
+// passphrase prompt: two fields (entry + confirm) when creating, one when
+// asking for an existing one
+function promptForPassphrase(title, { confirm = false } = {}) {
+  return new Promise((resolve) => {
+    const a = el('input', { class: 'input mono', type: 'password', placeholder: 'passphrase', style: { width: '100%' } });
+    const b = el('input', { class: 'input mono', type: 'password', placeholder: 'repeat passphrase', style: { width: '100%' } });
+    const err = el('div', { style: { color: 'var(--danger)', fontSize: '11.5px', minHeight: '14px' }, text: '' });
+    const modal = openModal({
+      title, size: 'sm',
+      body: el('div', {},
+        a, confirm ? el('div', { style: { height: '8px' } }) : null, confirm ? b : null, err,
+        el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', marginTop: '10px' }, text: 'This seals the sync bundle (scrypt + AES-256-GCM). Lose it and the bundle cannot be opened - there is no recovery.' })),
+      footer: [
+        { label: 'Cancel', onClick: () => { modal.close(); resolve(null); } },
+        {
+          label: confirm ? 'Seal' : 'Open', primary: true, onClick: () => {
+            if (!a.value || a.value.length < 4) { err.textContent = 'At least 4 characters.'; return false; }
+            if (confirm && a.value !== b.value) { err.textContent = 'The two passphrases do not match.'; return false; }
+            modal.close();
+            resolve(a.value);
+          }
+        }
+      ],
+      onClose: () => resolve(null)
+    });
+    setTimeout(() => a.focus(), 40);
+  });
+}
+
+// sync folder section: live status + setup/disable/sync-now controls.
+// Returns the container; the status rows fill in asynchronously.
+function buildSyncSection() {
+  const box = el('div', { class: 'sync-status' }, el('div', { class: 'hint', text: 'Reading sync status\u2026' }));
+  (async () => {
+    try {
+      const st = await PH().sync.status();
+      const rows = [];
+      const fmtT = (t) => t ? new Date(t).toLocaleTimeString() : '\u2014';
+      if (st.enabled) {
+        rows.push(
+          el('div', { class: 'field' },
+            field('Folder', el('div', { class: 'row' },
+              el('input', { class: 'input mono grow', readonly: '', value: st.dir }),
+              el('button', { class: 'btn', text: 'Sync now', onclick: async () => {
+                const r = await PH().sync.syncNow();
+                toast({ title: 'Synced', sub: r?.merged?.changed ? `${r.merged.adopted || 0} workspace(s) updated from the folder, local changes written out.` : 'Local changes written out; nothing newer was waiting in the folder.', type: 'success', ic: 'check' });
+                settingsModal('sync');
+              } }),
+              el('button', { class: 'btn btn-danger', text: 'Stop syncing', onclick: async () => { await PH().sync.disable(); await S.refresh(); settingsModal('sync'); } }))),
+            `Last write ${fmtT(st.lastWriteAt)} \u00b7 last merge ${fmtT(st.lastMergeAt)} \u00b7 this device ${String(st.deviceId).slice(0, 12)}`),
+          st.lastError ? el('div', { class: 'pill danger', text: st.lastError }) : null,
+          el('div', { class: 'pill success', text: 'Live: the bundle rewrites after every change and merges what peers drop in' }));
+      } else {
+        rows.push(
+          el('div', { class: 'field' },
+            field('Set up folder sync',
+              el('button', { class: 'btn btn-primary', html: icon('copy', 14) + ' Choose folder and start\u2026', onclick: async () => {
+                const dir = await PH().sync.pickDir();
+                if (!dir) return;
+                const pass = await promptForPassphrase('Passphrase for the sync bundle', { confirm: true });
+                if (!pass) return;
+                try {
+                  await PH().sync.setup(dir, pass);
+                  toast({ title: 'Sync is live', sub: `The sealed bundle lives in ${dir}. Point every device's Pigeonhole at the same folder and passphrase.`, type: 'success', ic: 'check', timeout: 8000 });
+                  settingsModal('sync');
+                } catch (e) { toast({ title: 'Sync setup failed', sub: String(e.message || e).slice(0, 90), type: 'error', ic: 'warn' }); }
+              } }),
+              'The folder only ever sees the sealed bundle - put it anywhere a folder already syncs for you.')));
+      }
+      box.replaceChildren(...rows.filter(Boolean));
+    } catch (e) {
+      box.replaceChildren(el('div', { class: 'hint', text: 'Sync status unavailable: ' + String(e.message || e).slice(0, 60) }));
+    }
+  })();
+  return box;
+}
+
+// app lock card: set/change/remove PIN + policies (async status fill)
+function buildLockSection() {
+  const box = el('div', { class: 'lock-status' }, el('div', { class: 'hint', text: 'Reading lock status\u2026' }));
+  (async () => {
+    try {
+      const st = await PH().lock.status();
+      const pinRow = st.hasPin
+        ? el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px' } },
+          el('button', { class: 'btn', text: 'Change PIN\u2026', onclick: () => askPin('Change the app PIN', async (pin) => { try { await PH().lock.setPin(pin); toast({ title: 'PIN updated', type: 'success', ic: 'check' }); settingsModal('privacy'); } catch (e) { toast({ title: 'PIN not changed', sub: String(e.message || e).slice(0, 80), type: 'error', ic: 'warn' }); } }) }),
+          el('button', { class: 'btn btn-danger', text: 'Remove PIN', onclick: async () => { await PH().lock.clearPin(); settingsModal('privacy'); } }),
+          el('button', { class: 'btn', html: icon('lock', 13) + ' Lock now', onclick: async () => { await PH().lock.lock(); } }))
+        : el('div', { class: 'row' },
+          el('button', { class: 'btn btn-primary', text: 'Set a PIN\u2026', onclick: () => askPin('Set the app PIN (4-12 digits)', async (pin) => { try { await PH().lock.setPin(pin); toast({ title: 'App lock is on', sub: 'Ctrl+Shift+L locks instantly; the PIN unlocks in place.', type: 'success', ic: 'check' }); settingsModal('privacy'); } catch (e) { toast({ title: 'PIN not set', sub: String(e.message || e).slice(0, 80), type: 'error', ic: 'warn' }); } }) }));
+      const idleSeg = el('div', { class: 'seg' }, [[0, 'Off'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 h']].map(([m, l]) =>
+        el('button', { class: (st.idleMinutes || 0) === m ? 'on accent' : '', text: l, onclick: async () => { await PH().lock.setPolicy({ idleMinutes: m }); settingsModal('privacy'); } })));
+      const minToggle = toggleRow('Lock when minimized',
+        'The boss key\u2019s passive cousin: hiding the window locks it.', !!st.lockOnMinimize,
+        async (v) => { await PH().lock.setPolicy({ lockOnMinimize: v }); });
+      box.replaceChildren(
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6' }, text: 'Ctrl+Shift+L (or the Workspaces menu) covers everything - names, tab titles, page content - until the PIN is entered. Sessions stay put: unlock picks up exactly where you left off. The PIN is stored as a scrypt hash, never in plain text.' }),
+        pinRow,
+        el('div', { style: { height: '10px' } }),
+        field('Auto-lock after idle', idleSeg, 'Nothing typed or clicked for that long = locked.'),
+        minToggle);
+    } catch (e) {
+      box.replaceChildren(el('div', { class: 'hint', text: 'Lock status unavailable' }));
+    }
+  })();
+  return box;
+}
+function askPin(title, onOk) {
+  const input = el('input', { class: 'input mono', type: 'password', inputmode: 'numeric', placeholder: '4-12 digits', style: { width: '100%' } });
+  const err = el('div', { style: { color: 'var(--danger)', fontSize: '11.5px', minHeight: '14px' } });
+  const modal = openModal({
+    title, size: 'sm',
+    body: el('div', {}, input, err),
+    footer: [
+      { label: 'Cancel', onClick: () => modal.close() },
+      { label: 'Save', primary: true, onClick: () => {
+        if (!/^\d{4,12}$/.test(input.value)) { err.textContent = '4 to 12 digits.'; return false; }
+        modal.close(); onOk(input.value);
+      } }
+    ]
+  });
+  setTimeout(() => input.focus(), 40);
+}
 
 export async function settingsModal(activeTab = 'general') {
   // settings replaces itself on tab switches - never stack overlays
@@ -207,6 +332,29 @@ export async function settingsModal(activeTab = 'general') {
         el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'Extensions are small features that run inside Pigeonhole and apply to every workspace. Each one is switched on or off individually, takes effect immediately, and there are no installs or external stores - everything ships with the app. The puzzle button in the top bar opens the same list as a quick panel.' })),
       ...exts.map(x => extCard(x, st))),
 
+    sync: () => el('div', {},
+      section('Your Pigeonhole, on every device',
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'One sealed file holds the whole app - workspaces, identities, vault passwords, tabs, history, mail backups, settings. Pick a folder you already trust (Syncthing, Dropbox, a USB stick): Pigeonhole writes the bundle there after every change and merges what it finds, on every device pointing at the same folder. Merges are last-writer-wins per workspace with deletion tombstones, so an older snapshot can never roll a newer one back - sync never goes backwards.' }),
+        el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', lineHeight: '1.6' }, text: 'The bundle is sealed with your passphrase (scrypt + AES-256-GCM). Site logins themselves do not travel - Chromium keeps them in each machine\u2019s isolated profiles - but the identities and passwords do, so a new device logs straight back in.' }),
+        buildSyncSection()),
+      section('One-off moves',
+        field('', el('div', { class: 'row' },
+          el('button', { class: 'btn', html: icon('download', 14) + ' Export full bundle\u2026', onclick: async () => {
+            const pass = await promptForPassphrase('Choose a passphrase for this bundle (4+ characters)');
+            if (!pass) return;
+            const r = await PH().sync.exportFile(pass, null);
+            if (r?.ok) toast({ title: 'Bundle exported', sub: `${(r.bytes / 1024).toFixed(0)} KB sealed - import it on any device (Settings \u2192 Sync).`, type: 'success', ic: 'check', timeout: 6000 });
+            else if (r && r.ok === false && !r.canceled) toast({ title: 'Export failed', sub: String(r.error || '').slice(0, 90), type: 'error', ic: 'warn' });
+          } }),
+          el('button', { class: 'btn', html: icon('external', 14) + ' Import from a bundle file\u2026', onclick: async () => {
+            const pass = await promptForPassphrase('The bundle\u2019s passphrase');
+            if (!pass) return;
+            const r = await PH().sync.importFile(pass);
+            if (r?.ok) toast({ title: 'Bundle merged in', sub: `${r.adopted || 0} workspace${(r.adopted || 0) === 1 ? '' : 's'} updated, ${r.dropped || 0} deletions applied. Nothing older overwrote anything newer.`, type: 'success', ic: 'check', timeout: 7000 });
+            else if (r && r.ok === false && !r.canceled) toast({ title: 'Import failed', sub: String(r.error || 'wrong passphrase?').slice(0, 90), type: 'error', ic: 'warn' });
+          } })), 'Full bundles carry everything; the passphrase seals it. Imports merge, never overwrite.')),
+    ),
+
     privacy: () => el('div', {},
       section('What Pigeonhole stores',
         el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'Everything lives on this computer, in the app data folder: one state file (workspaces, settings, vault) plus one isolated browser profile per workspace. The app itself makes no network requests except loading the pages you visit - and one background check of the GitHub Releases feed (api.github.com) that powers the built-in updater. There is no telemetry, no analytics, no account.' }),
@@ -217,6 +365,8 @@ export async function settingsModal(activeTab = 'general') {
         field('', el('div', { class: 'row' },
           el('button', { class: 'btn', html: icon('docs', 14) + ' Open data folder', onclick: () => PH().app.open('userData') }),
           el('button', { class: 'btn', html: icon('download', 14) + ' Export all vaults', title: 'Plain text - handle with care', onclick: async () => { const r = await PH().vault.exportVault(null); if (r?.ok) toast({ title: 'Vault exported', sub: 'Plain text file - store it safely and delete it when done', type: 'success', ic: 'check' }); } })), 'Exports include passwords in plain text.')),
+      section('App lock (PIN)',
+        buildLockSection()),
     ),
 
     about: () => el('div', { style: { textAlign: 'center', padding: '18px 6px' } },
@@ -492,6 +642,17 @@ export async function wsSettingsModal(wsId, opts = {}) {
       section('Tile colour', colorDots),
       netSection,
       backupsSection,
+      section('Move this workspace',
+        field('', el('button', {
+          class: 'btn', html: icon('external', 14) + ' Export workspace bundle\u2026', title: 'Identity, vault entries, settings, tabs, backups - sealed',
+          onclick: async () => {
+            const pass = await promptForPassphrase(`Passphrase for workspace ${w.num}\u2019s bundle`, { confirm: true });
+            if (!pass) return;
+            const r = await PH().sync.exportFile(pass, w.id);
+            if (r?.ok) toast({ title: 'Workspace bundle exported', sub: `${(r.bytes / 1024).toFixed(0)} KB sealed. Import it on another device: Settings \u2192 Sync \u2192 Import from a bundle file.`, type: 'success', ic: 'check', timeout: 7000 });
+            else if (r && r.ok === false && !r.canceled) toast({ title: 'Export failed', sub: String(r.error || '').slice(0, 90), type: 'error', ic: 'warn' });
+          }
+        }), 'One sealed file: identity + vault entries + proxy + tabs + mail backups. On the other machine the import merges by age - newer wins, older never rolls back.')),
       section('Danger zone',
         el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px' } },
           el('button', {

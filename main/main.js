@@ -21,6 +21,9 @@ const { createUpdater } = require('./updater');
 const extensions = require('./extensions');
 const { registerProxyAuthHandler, applyAllProxies } = require('./proxy');
 const pool = require('./proxypool');
+const sync = require('./sync');
+const applock = require('./applock');
+const traffic = require('./traffic');
 const IS_DEV = !!process.env.PH_DEV || !!process.argv.includes('--dev');
 let mainWindow = null;
 
@@ -179,6 +182,8 @@ function createWindow() {
 
   mainWindow.on('ready-to-show', () => mainWindow.show());
   mainWindow.on('closed', () => { mainWindow = null; });
+  // optional app-lock policy: locking when the window is minimized
+  mainWindow.on('minimize', () => { if (applock.isLocked().lockOnMinimize) applock.lock(); });
 
   // ---- dev screenshot harness: electron . --shot=out.png --wait=3000 [--scene=wizard] ----
   const shotArg = process.argv.find(a => a.startsWith('--shot='));
@@ -230,6 +235,16 @@ app.whenReady().then(async () => {
   // extension wiring and its own proxy route
   for (const w of store.state.workspaces) sessionForPartition('persist:' + w.id);
   await applyAllProxies(sessionForPartition);
+
+  // beta.7: cross-device sync (sealed bundle in a folder of the user's
+  // choosing), the app lock, and per-workspace traffic meters
+  const sendEvent = (type, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ph-event', { type, payload });
+  };
+  sync.init(store, sendEvent, sessionForPartition);
+  applock.init(store, sendEvent);
+  applock.startIdleWatch();
+  if (!process.env.PH_NO_TRAFFIC) traffic.attach(sessionForPartition, store);
 
   // free proxy pool: load the cached verified exits and warm/refresh as needed
   pool.init();

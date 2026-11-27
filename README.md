@@ -36,7 +36,7 @@ adds on top:
   *Direct/Auto/Proxy* chip, **Test exit IP** command and routing dots prove
   the exit. Community exits: HTTPS stays end-to-end encrypted, but the
   volunteer operator sees plain-HTTP and the exit IP is theirs. Turn on
-  *Beta updates* (Settings → About) to ride the 1.1 line.
+  *Beta updates* (Settings → About) to ride the 1.2 line.
 - **Built-in extensions.** Small features that ship inside the app,
   each switched on or off individually - from the puzzle button in the top
   bar or Settings → Extensions: a spell checker with right-click corrections,
@@ -51,6 +51,39 @@ adds on top:
   recency trail - a bar that shrinks and fades the further back in your
   switching history it is. The trail's length follows your workspace count:
   few workspaces, short trails.
+- **Cross-device sync that never goes backwards.** One sealed file -
+  workspaces, identities, vault passwords, tabs, history, mail backups,
+  settings - written into a folder you already trust (Syncthing, Dropbox, a
+  USB stick). Every device pointing at that folder merges the newest state
+  per workspace, and deletions are tombstoned, so an older snapshot can
+  never roll a newer one back. Sealed with your passphrase (scrypt +
+  AES-256-GCM); the folder only ever sees ciphertext. One-off moves work
+  too: export a full bundle or a single workspace from its settings, import
+  on the other machine. Settings → Sync. (Site logins themselves stay in
+  each machine's Chromium profiles; the identities and passwords travel, so
+  you just sign in once on a new device.)
+- **Keyboard-first switching.** `Ctrl+K` searches open tabs across every
+  workspace and jumps straight there; `Ctrl+Tab` cycles workspaces in
+  most-recently-used order (the same order the tile trails encode), and
+  `Ctrl+1..9` jumps to a tile. `Ctrl+Shift+T` reopens a closed tab.
+- **Pinned tabs and undo-close.** Pin a tab (right-click → Pin) for a
+  compact, close-others-proof staple - your mailbox page, for instance.
+  Closed tabs are remembered per workspace (last 10) for instant reopen.
+- **Workspace groups and duplication.** File tiles into named, collapsible
+  sidebar groups by drag or right-click; duplicate a workspace to clone its
+  tabs, route and group with a fresh identity pre-armed in the wizard -
+  one click from "one account here" to "a second one".
+- **App lock.** `Ctrl+Shift+L` (or the Workspaces menu) locks everything
+  behind a PIN: names, tab titles and pages covered until it is entered.
+  Optional auto-lock after idle and lock-on-minimize; the PIN is stored as
+  a scrypt hash. Unlock is in place - nothing restarts.
+- **Page tools.** Reader view (`Ctrl+Alt+R`) extracts the article into a
+  clean, paper-toned overlay; picture-in-picture (`Ctrl+Alt+P`, or the page
+  right-click) pops the video into an always-on-top mini window that
+  follows you across workspaces.
+- **Traffic meter.** Approximate per-worksession byte counters (from
+  request/response headers) in the status bar and network menu - useful
+  when your exit is a metered VPS.
 - **Guided email setup, Atomic Mail by default.** Creating the Nth mailbox is
   a wizard: Atomic Mail is preselected (no phone, nothing personal, works
   well from shared exits), or pick another no-phone provider, generate a
@@ -152,7 +185,13 @@ re-downloads.
 | `Alt+Home` | New tab page |
 | `Ctrl+F` | Find in page |
 | `Alt+1` ... `Alt+9` | Switch to workspace 1-9 |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous workspace (MRU order) |
+| `Ctrl+1`..`Ctrl+9` (or `Alt+1`..`9`) | Jump to that workspace tile |
+| `Ctrl+K` | Search open tabs across all workspaces |
+| `Ctrl+Shift+T` | Reopen closed tab |
+| `Ctrl+PageUp` / `Ctrl+PageDown` | Next / previous tab (in this workspace) |
+| `Ctrl+Alt+R` / `Ctrl+Alt+P` | Reader view / pop video out |
+| `Ctrl+Shift+L` | Lock the app (once a PIN is set) |
 | `Ctrl+B` | Show or hide the workspace sidebar |
 | `Ctrl+Shift+N` | New workspace |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom in / out / reset |

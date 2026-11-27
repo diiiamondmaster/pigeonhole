@@ -16,7 +16,29 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     setProxy: (wsId, cfg) => invoke('ph:ws-set-proxy', wsId, cfg),
     setProxyMode: (wsId, mode, region) => invoke('ph:ws-proxy-mode', wsId, mode, region),
     testProxy: (wsId, url) => invoke('ph:ws-test-proxy', wsId, url),
-    clearData: (wsId) => invoke('ph:ws-clear-data', wsId)
+    clearData: (wsId) => invoke('ph:ws-clear-data', wsId),
+    setGroup: (wsId, group) => invoke('ph:ws-set-group', wsId, group)
+  },
+  sync: {
+    status: () => invoke('ph:sync-status'),
+    setup: (dir, passphrase) => invoke('ph:sync-setup', { dir, passphrase }),
+    disable: () => invoke('ph:sync-disable'),
+    syncNow: () => invoke('ph:sync-now'),
+    exportFile: (passphrase, wsId) => invoke('ph:sync-export-file', { passphrase, wsId: wsId || null }),
+    importFile: (passphrase) => invoke('ph:sync-import-file', { passphrase }),
+    pickDir: () => invoke('ph:sync-pick-dir')
+  },
+  lock: {
+    status: () => invoke('ph:lock-status'),
+    setPin: (pin) => invoke('ph:lock-set-pin', pin),
+    clearPin: () => invoke('ph:lock-clear-pin'),
+    lock: () => invoke('ph:lock-lock'),
+    unlock: (pin) => invoke('ph:lock-unlock', pin),
+    activity: () => invoke('ph:lock-activity'),
+    setPolicy: (patch) => invoke('ph:lock-set-policy', patch)
+  },
+  traffic: {
+    get: () => invoke('ph:traffic-get')
   },
   pool: {
     status: () => invoke('ph:pool-status'),

@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.2.0-beta.1 - 2026-11-27 (beta channel)
+
+The beta.7 build, from the user-picked feature list - plus the sync engine
+that was the custom request.
+
+- **Cross-device sync, never backwards.** A sealed bundle (workspaces,
+  identities, vault passwords, tabs, history, mail backups, settings) is
+  written to a folder of your choosing and merged from it on every device.
+  Per-workspace last-writer-wins + deletion tombstones mean older snapshots
+  can never roll back newer data - importing a stale bundle is a no-op by
+  construction. One-off export/import (full or single-workspace) rides the
+  same machinery. Settings → Sync.
+- **Ctrl+K tab switcher** across every workspace, jump straight to the hit.
+- **Ctrl+Tab workspace cycler** (MRU order, commit-after-pause) and
+  **Ctrl+1..9** tile jumps. In-workspace tab cycling moved to
+  Ctrl+PageUp/PageDown.
+- **Undo close tab** (Ctrl+Shift+T) with a per-workspace recently-closed
+  list in the tab menu.
+- **Pinned tabs**: compact, persisted, exempt from "close others".
+- **Duplicate workspace**: tabs, route and group carry over; a fresh
+  identity is pre-armed in the wizard on the same provider.
+- **Workspace groups** in the sidebar: named, collapsible sections; file
+  tiles by drag or right-click.
+- **App lock**: Ctrl+Shift+L PIN lock (scrypt-hashed), idle auto-lock and
+  lock-on-minimize options, unlock in place.
+- **Reader view** (Ctrl+Alt+R) and **picture-in-picture** (Ctrl+Alt+P) via
+  the page right-click menu.
+- **Traffic meter**: approximate per-workspace byte counters in the status
+  bar and network menu.
+- Fixed a latent tab-persistence bug: a change in workspace B could cancel
+  workspace A's still-pending tab save (shared debounce timer) - saves are
+  now per-workspace.
+- 207 E2E checks green (new beta.7 suite: 35 checks covering every feature
+  above, including a live peer-bundle merge proving older data never wins).
+
 ## 1.1.0 - 2026-11-27 (stable)
 
 The whole 1.1.0 line, promoted from six beta rounds to the main update

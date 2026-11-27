@@ -15,6 +15,10 @@ import { closeWizard } from './wizard.js';
 import { handleUpdateEvent, checkUpdates } from './updates.js';
 import { initExtPanel, toggleExtPanel, updateAdsBadge, openShieldMenu } from './extpanel.js';
 import { showMenu } from './ctxmenu.js';
+import { openSwitcher } from './switcher.js';
+import { cycleWorkspace } from './cycler.js';
+import { readerToggle, pipToggle } from './pagefx.js';
+import { initLock, setLocked } from './lock.js';
 
 let APP_INFO = { version: '1.0.0' };
 let ADS_BLOCKED = 0;
@@ -45,6 +49,8 @@ async function boot() {
   initIdentity();
   initVault();
   initExtPanel();
+  initLock();
+  initTrafficChip();
   applyUiPrefs();
   renderSidebar();
   renderTopbar();
@@ -153,6 +159,25 @@ export function openNetMenu(anchor, w) {
   ]);
 }
 
+// per-workspace traffic meter (approximate: header-derived byte counts)
+let TRAFFIC = {};
+function initTrafficChip() {
+  setInterval(async () => {
+    try { TRAFFIC = await PH().traffic.get(); renderTrafficChip(); } catch { }
+  }, 10 * 1000);
+}
+function renderTrafficChip() {
+  const item = qs('#trafficItem');
+  if (!item) return;
+  const c = TRAFFIC[S.getActiveWsId()];
+  if (!c || (!c.down && !c.up)) { item.replaceChildren(); return; }
+  const mb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+  item.replaceChildren(
+    el('span', { class: 'dot' }),
+    el('span', { text: `\u2193 ${mb(c.down)}  \u2191 ${mb(c.up)}` }));
+  item.title = `Approximate traffic for Workspace ${S.activeWs()?.num || ''} this session (from response/request headers; streams without lengths are undercounted).`;
+}
+
 function renderStatusbar() {
   const w = S.activeWs();
   const proxied = !!(w && w.proxy && w.proxy.enabled);
@@ -170,6 +195,7 @@ function renderStatusbar() {
     el('span', { html: routeText }));
   qs('#statusLeft').replaceChildren(...[
     netItem,
+    el('span', { class: 'status-item traffic', id: 'trafficItem' }),
     ADS_BLOCKED > 0 ? el('span', {
       class: 'status-item ads', title: 'Blocked by Ad Shield this session (click for the menu)'
     },
@@ -253,6 +279,15 @@ function handleEvent({ type, payload }) {
     renderStatusbar();
   } else if (type === 'scene') {
     runScene(payload);
+  } else if (type === 'lock-state') {
+    setLocked(!!payload.locked);
+  } else if (type === 'sync-merged') {
+    S.refresh().then(() => { renderSidebar(); renderTopbar(); renderStatusbar(); });
+    toast({
+      title: 'Synced from another device',
+      sub: `${payload.adopted || 0} workspace${(payload.adopted || 0) === 1 ? '' : 's'} updated${payload.dropped ? `, ${payload.dropped} deleted` : ''} - nothing went backwards.`,
+      type: 'success', ic: 'check', timeout: 6000
+    });
   } else if (type && type.startsWith('update-')) {
     handleUpdateEvent(type, payload);
   }
@@ -274,6 +309,13 @@ export function runAction(action, extra = {}) {
     case 'next-tab': cycleTab(1); break;
     case 'prev-tab': cycleTab(-1); break;
     case 'new-workspace': newWorkspace(); break;
+    case 'tab-switcher': openSwitcher(); break;
+    case 'cycle-ws': cycleWorkspace(1); break;
+    case 'cycle-ws-back': cycleWorkspace(-1); break;
+    case 'undo-close': { const r = Tabs.undoClose(wsId); if (!r) toast({ title: 'Nothing to reopen', sub: 'No recently closed tab in this workspace.', type: 'info', ic: 'info', timeout: 2500 }); break; }
+    case 'lock': PH().lock.lock().catch(() => { }); break;
+    case 'reader': readerToggle(); break;
+    case 'pip': pipToggle(); break;
     case 'toggle-sidebar': import('./sidebar.js').then(m => m.toggleSidebar()); break;
     case 'settings': settingsModal(); break;
     case 'about': settingsModal('about'); break;
@@ -312,15 +354,25 @@ function onChromeKey(e) {
   else if (c && !a && k === 'l') { e.preventDefault(); runAction('focus-address'); }
   else if (c && !a && k === 'r' && !inField) { e.preventDefault(); runAction('reload'); }
   else if (c && !a && k === 'f') { e.preventDefault(); runAction('find'); }
+  else if (c && !a && k === 'k') { e.preventDefault(); runAction('tab-switcher'); }
+  else if (c && s && k === 't') { e.preventDefault(); runAction('undo-close'); }
+  else if (c && s && k === 'l') { e.preventDefault(); runAction('lock'); }
   else if (c && s && k === 'n') { e.preventDefault(); runAction('new-workspace'); }
   else if (c && !a && k === 'b') { e.preventDefault(); runAction('toggle-sidebar'); }
   else if (c && s && k === 'e') { e.preventDefault(); runAction('ext-panel'); }
   else if (c && s && k === 'i') { e.preventDefault(); runAction('devtools'); }
-  else if (c && !a && k === 'tab') { e.preventDefault(); runAction(s ? 'prev-tab' : 'next-tab'); }
+  // Ctrl+Tab cycles WORKSPACES (MRU, like OS alt-tab); the in-workspace tab
+  // cycling moves to Ctrl+PageUp/PageDown (beta.7)
+  else if (c && !a && k === 'tab') { e.preventDefault(); runAction(s ? 'cycle-ws-back' : 'cycle-ws'); }
+  else if (c && !a && (k === 'pageup' || k === 'pagedown')) { e.preventDefault(); runAction(k === 'pageup' ? 'prev-tab' : 'next-tab'); }
   else if (a && !c && k === 'arrowleft') { e.preventDefault(); runAction('back'); }
   else if (a && !c && k === 'arrowright') { e.preventDefault(); runAction('forward'); }
   else if (a && !c && k === 'home') { e.preventDefault(); runAction('home'); }
+  // Ctrl+1..9 jumps to that workspace tile (Alt+N keeps working)
+  else if (c && !a && !s && /^[0-9]$/.test(k)) { e.preventDefault(); runAction('ws-switch', { n: k === '0' ? 10 : Number(k) }); }
   else if (a && !c && /^[0-9]$/.test(k)) { e.preventDefault(); runAction('ws-switch', { n: k === '0' ? 10 : Number(k) }); }
+  else if (c && e.altKey && k === 'r') { e.preventDefault(); runAction('reader'); }
+  else if (c && e.altKey && k === 'p') { e.preventDefault(); runAction('pip'); }
   else if (!c && !a && k === 'f5' && !inField) { e.preventDefault(); runAction('reload'); }
   else if (!c && !a && k === 'f11') { e.preventDefault(); runAction('fullscreen'); }
 }

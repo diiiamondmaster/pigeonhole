@@ -21,10 +21,41 @@ const tabs = new Map();         // wsId -> [{id,url,title,favicon,active,loading
 let tabSeq = 0;
 const newTabId = () => 't' + Date.now().toString(36) + (tabSeq++).toString(36);
 
-const persist = debounce((wsId) => {
-  const list = (tabs.get(wsId) || []).map(t => ({ id: t.id, url: t.url, title: t.title, favicon: t.favicon, active: t.active }));
-  PH().tabs.save(wsId, list);
-}, 500);
+// per-workspace debounce: a single shared timer would let a change in
+// workspace B CANCEL workspace A's still-pending save (rapid multi-workspace
+// switching left stale tab lists in the store - and duplicate-workspace
+// copied them). One timer per workspace id instead.
+const persistTimers = new Map();
+const persist = (wsId) => {
+  clearTimeout(persistTimers.get(wsId));
+  persistTimers.set(wsId, setTimeout(() => {
+    persistTimers.delete(wsId);
+    const list = (tabs.get(wsId) || []).map(t => ({ id: t.id, url: t.url, title: t.title, favicon: t.favicon, active: t.active, pinned: !!t.pinned }));
+    PH().tabs.save(wsId, list);
+  }, 500));
+};
+
+// closed-tab stack (beta.7): Ctrl+Shift+T and the tab menu's "recently
+// closed" list draw from here. Internal pages are not worth reopening.
+const closedStacks = new Map();   // wsId -> [{url,title,favicon,pinned}]
+const CLOSED_CAP = 10;
+function rememberClosed(wsId, t) {
+  if (!t || !/^https?:/i.test(t.url || '')) return;
+  const st = closedStacks.get(wsId) || closedStacks.set(wsId, []).get(wsId);
+  st.unshift({ url: t.url, title: t.title || '', favicon: t.favicon || null, pinned: !!t.pinned });
+  if (st.length > CLOSED_CAP) st.length = CLOSED_CAP;
+}
+export function closedList(wsId) { return (closedStacks.get(wsId) || []).slice(0, CLOSED_CAP); }
+export function undoClose(wsId) {
+  const st = closedStacks.get(wsId) || [];
+  const item = st.shift();
+  if (!item) return null;
+  const t = createTab(wsId, { url: item.url, active: true });
+  t.title = item.title || '';
+  t.favicon = item.favicon || null;
+  render(wsId);
+  return t;
+}
 
 // ---------- containers ----------
 export function containerFor(wsId) { return containers.get(wsId); }
@@ -56,7 +87,7 @@ export function restoreWorkspace(wsId, storedTabs, { lazy = false } = {}) {
     // NTP tabs are always re-pointed at this workspace so the page gets the right data
     url: !t.url || /^pigeonhole:\/\/newtab/.test(t.url) ? NTP(wsId) : t.url,
     title: t.title || '',
-    favicon: t.favicon || null, active: !!t.active, loading: false,
+    favicon: t.favicon || null, active: !!t.active, pinned: !!t.pinned, loading: false,
     suspended: true, domReady: false, zoom: 1
   }));
   if (!list.length) list.push(makeTab(wsId, { url: NTP(wsId), active: true }));
@@ -248,6 +279,7 @@ export function closeTab(wsId, tabId) {
   const i = l.findIndex(t => t.id === tabId);
   if (i === -1) return;
   const [closed] = l.splice(i, 1);
+  rememberClosed(wsId, closed);
   const c = containers.get(wsId);
   const wv = c?.views.get(tabId);
   if (wv) { try { wv.remove(); } catch { } c.views.delete(tabId); }
@@ -394,7 +426,7 @@ export function render(wsId) {
         ? el('span', { class: 'fav' }, el('img', { src: t.favicon, alt: '' }))
         : el('span', { class: 'fav', html: icon(t.url.startsWith('pigeonhole://') ? 'grid' : 'globe', 13) }));
     const tab = el('div', {
-      class: `tab ${t.active ? 'active' : ''} ${t.loading ? 'loading' : ''} ${t.suspended ? 'suspended' : ''}`,
+      class: `tab ${t.active ? 'active' : ''} ${t.loading ? 'loading' : ''} ${t.suspended ? 'suspended' : ''} ${t.pinned ? 'pinned' : ''}`,
       role: 'tab', 'aria-selected': t.active ? 'true' : 'false',
       title: t.title || t.url,
       'data-tab': t.id,
@@ -405,8 +437,9 @@ export function render(wsId) {
       fav,
       el('span', { class: 'title', text: t.title || (t.url.startsWith('pigeonhole://newtab') ? 'New Tab' : t.url) }),
       el('span', {
-        class: 'close', html: icon('close', 12), title: 'Close tab',
-        onclick: (e) => { e.stopPropagation(); closeTab(wsId, t.id); }
+        class: 'close', html: icon(t.pinned ? 'pin' : 'close', 12),
+        title: t.pinned ? 'Unpin tab' : 'Close tab',
+        onclick: (e) => { e.stopPropagation(); t.pinned ? togglePin(wsId, t.id) : closeTab(wsId, t.id); }
       })
     );
     strip.append(tab);
@@ -499,6 +532,24 @@ function initTabDrag() {
   strip.addEventListener('pointercancel', finish);
 }
 
+// pinned tabs (beta.7): compact favicon-first tabs at the strip's left;
+// exempt from "close others". Pinning moves the tab to the front of the
+// pinned block, unpinning parks it after the last pinned tab.
+export function togglePin(wsId, tabId) {
+  const l = tabs.get(wsId) || [];
+  const i = l.findIndex(t => t.id === tabId);
+  if (i === -1) return;
+  const [t] = l.splice(i, 1);
+  t.pinned = !t.pinned;
+  if (t.pinned) l.unshift(t);
+  else {
+    const lastPin = l.reduce((acc, x, idx) => x.pinned ? idx : acc, -1);
+    l.splice(lastPin + 1, 0, t);
+  }
+  render(wsId);
+  persist(wsId);
+}
+
 export function moveTab(wsId, tabId, dir) {
   const l = tabs.get(wsId) || [];
   const i = l.findIndex(t => t.id === tabId);
@@ -512,14 +563,29 @@ export function moveTab(wsId, tabId, dir) {
 
 function tabMenu(e, wsId, tabId) {
   const l = tabs.get(wsId) || [];
-  showMenu(e.clientX, e.clientY, [
-    { label: 'Move left', icon: 'chevL', action: () => moveTab(wsId, tabId, -1) },
-    { label: 'Move right', icon: 'chevR', action: () => moveTab(wsId, tabId, 1) },
-    { sep: true },
-    { label: 'Reload tab', icon: 'reload', action: () => { activateTab(wsId, tabId); reload(wsId); } },
-    { label: 'Close other tabs', icon: 'close', action: () => { for (const t of [...l]) if (t.id !== tabId) closeTab(wsId, t.id); } },
-    { sep: true },
-    { label: 'Close tab', icon: 'close', kbd: 'Ctrl+W', danger: true, action: () => closeTab(wsId, tabId) }
-  ]);
+  const t = l.find(x => x.id === tabId);
+  const closed = closedList(wsId);
+  const items = [];
+  if (t && !t.pinned) {
+    items.push({ label: 'Move left', icon: 'chevL', action: () => moveTab(wsId, tabId, -1) });
+    items.push({ label: 'Move right', icon: 'chevR', action: () => moveTab(wsId, tabId, 1) });
+  }
+  items.push({ label: t && t.pinned ? 'Unpin tab' : 'Pin tab', icon: 'pin', action: () => togglePin(wsId, tabId) });
+  items.push({ sep: true });
+  items.push({ label: 'Reload tab', icon: 'reload', action: () => { activateTab(wsId, tabId); reload(wsId); } });
+  items.push({ label: 'Close other tabs', icon: 'close', action: () => { for (const x of [...l]) if (x.id !== tabId && !x.pinned) closeTab(wsId, x.id); } });
+  if (closed.length) {
+    items.push({ sep: true });
+    items.push({
+      label: `Reopen closed tab — ${(closed[0].title || closed[0].url).slice(0, 30)}`,
+      icon: 'clock', kbd: 'Ctrl+Shift+T', action: () => undoClose(wsId)
+    });
+    for (const c of closed.slice(1, 4)) {
+      items.push({ label: `Reopen: ${(c.title || c.url).slice(0, 40)}`, icon: 'history', action: () => createTab(wsId, { url: c.url, active: true }) });
+    }
+  }
+  items.push({ sep: true });
+  items.push({ label: 'Close tab', icon: 'close', kbd: 'Ctrl+W', danger: true, action: () => closeTab(wsId, tabId) });
+  showMenu(e.clientX, e.clientY, items);
 }
 initTabDrag();

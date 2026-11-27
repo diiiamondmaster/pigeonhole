@@ -22,7 +22,7 @@ export function renderSidebar() {
   const tilesRoot = qs('#wsTiles');
   tilesRoot.replaceChildren();
 
-  for (const w of S.workspaces()) {
+  const makeTile = (w) => {
     const tile = el('button', {
       class: `ws-tile ${w.id === S.getActiveWsId() ? 'active' : ''} ${w.identity ? '' : 'no-identity'}`,
       role: 'option', 'aria-selected': w.id === S.getActiveWsId() ? 'true' : 'false',
@@ -41,7 +41,40 @@ export function renderSidebar() {
     tile.addEventListener('pointerdown', onTilePointerDown);
     tile.addEventListener('mouseenter', () => showTip(tile, w));
     tile.addEventListener('mouseleave', hideTip);
-    tilesRoot.append(tile);
+    return tile;
+  };
+
+  // beta.7 groups: ungrouped tiles first (identical to the pre-group look),
+  // then one collapsible labelled section per group, in name order. With no
+  // groups in use the sidebar renders exactly as it always did.
+  const groups = new Map();
+  const loose = [];
+  for (const w of S.workspaces()) {
+    const tile = makeTile(w);
+    if (w.group) {
+      if (!groups.has(w.group)) groups.set(w.group, []);
+      groups.get(w.group).push(tile);
+    } else loose.push(tile);
+  }
+  for (const tile of loose) tilesRoot.append(tile);
+  const collapsed = S.snap()?.ui?.wsGroupCollapsed || {};
+  for (const g of [...groups.keys()].sort((a, b) => a.localeCompare(b))) {
+    const tiles = groups.get(g);
+    const head = el('button', {
+      class: 'ws-group-head', 'data-group': g,
+      'aria-expanded': collapsed[g] ? 'false' : 'true',
+      onclick: async () => {
+        const cur = S.snap()?.ui?.wsGroupCollapsed || {};
+        await PH().ui.set({ wsGroupCollapsed: { ...cur, [g]: !cur[g] } });
+        await S.refresh();
+        renderSidebar();
+      }
+    },
+      el('span', { class: 'chev', html: icon('chevD', 11) }),
+      el('span', { class: 'ws-group-name', text: g.slice(0, 18) }),
+      el('span', { class: 'ws-group-count', text: String(tiles.length) }));
+    tilesRoot.append(head);
+    if (!collapsed[g]) for (const tile of tiles) tilesRoot.append(tile);
   }
 
   applyBars();
@@ -101,6 +134,18 @@ function applyBars() {
       bar.title = '';
     }
   }
+}
+
+// MRU order for the Ctrl+Tab cycler: recency first (active at the head),
+// then never-visited workspaces in list order so cycling always covers all.
+export function mruIds() {
+  const exist = new Set(S.workspaces().map(w => w.id));
+  const out = [];
+  const act = S.getActiveWsId();
+  if (act && exist.has(act)) out.push(act);
+  for (const id of recency) if (exist.has(id) && !out.includes(id)) out.push(id);
+  for (const w of S.workspaces()) if (!out.includes(w.id)) out.push(w.id);
+  return out;
 }
 
 export function noteRecency(wsId) {
@@ -205,8 +250,20 @@ function onTilePointerMove(e) {
     drag.ghost.style.left = (e.clientX - 23) + 'px';
     drag.ghost.style.top = (e.clientY - 23) + 'px';
   }
+  // a group header under the pointer means "file into that group", not a
+  // reorder: highlight the header and park the drop index
+  drag.groupTarget = null;
+  for (const head of qs('#wsTiles').querySelectorAll('.ws-group-head')) {
+    head.classList.remove('drop-hint');
+    const r = head.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top - 8 && e.clientY <= r.bottom + 8) {
+      head.classList.add('drop-hint');
+      drag.groupTarget = head.dataset.group;
+    }
+  }
+
   // nearest tile to the pointer = drop target; before/after by quadrant
-  const tiles = [...qs('#wsTiles').children].filter(t => t !== drag.tile);
+  const tiles = [...qs('#wsTiles').children].filter(t => t !== drag.tile && !t.classList?.contains('ws-group-head') && t !== drag.groupHead);
   let best = null, bestD = Infinity, after = false;
   for (const t of tiles) {
     const r = t.getBoundingClientRect();
@@ -214,6 +271,7 @@ function onTilePointerMove(e) {
     const d = Math.hypot(e.clientX - cx, e.clientY - cy);
     if (d < bestD) { bestD = d; best = t; after = e.clientY > cy || (Math.abs(e.clientY - cy) < r.height / 2 && e.clientX > cx); }
   }
+  if (drag.groupTarget) { drag.hover = null; drag.targetIdx = -1; return; }
   if (drag.hover && drag.hover !== best) drag.hover.classList.remove('drop-hint');
   drag.hover = best;
   if (best) best.classList.add('drop-hint');
@@ -235,17 +293,32 @@ async function onTilePointerUp(e) {
   tile.removeEventListener('pointercancel', onTilePointerUp);
   const wasMoved = drag.moved;
   const targetIdx = drag.targetIdx;
+  const groupTarget = drag.groupTarget;
   drag.ghost?.remove();
   drag.ghost = null;
   drag.hover?.classList.remove('drop-hint');
   drag.hover = null;
+  for (const head of qs('#wsTiles').querySelectorAll('.ws-group-head')) head.classList.remove('drop-hint');
+  drag.groupTarget = null;
   tile.classList.remove('dragging');
   drag.tile = null;
   if (wasMoved) {
     clickSuppressed = true;                  // this pointer was a drag
     setTimeout(() => { clickSuppressed = false; }, 120);
-    await reorderFromDrag(drag.wsId, targetIdx);
+    if (groupTarget) await moveToGroup(drag.wsId, groupTarget);
+    else await reorderFromDrag(drag.wsId, targetIdx);
   }
+}
+
+async function moveToGroup(wsId, group) {
+  if (!wsId || !group) return;
+  try {
+    await PH().workspaces.setGroup(wsId, group);
+    await S.refresh();
+    renderSidebar();
+    bus.emit('chrome-updated');
+    toast({ title: `Moved to “${group.slice(0, 20)}”`, sub: 'Drag onto another group header to refile, or right-click a tile to change it.', type: 'success', ic: 'check', timeout: 2600 });
+  } catch { toast({ title: 'Could not move to the group', type: 'error', ic: 'warn' }); }
 }
 
 async function reorderFromDrag(wsId, targetIdx) {
@@ -288,10 +361,30 @@ function tileMenu(e, w) {
     { label: 'Workspace settings…', icon: 'gear', action: () => wsSettingsModal(w.id) },
     { label: (w.proxy && w.proxy.enabled) ? 'Proxy settings…' : 'Route through a proxy…', icon: 'globe', action: () => wsSettingsModal(w.id, { focusNetwork: true }) },
     { label: 'Rename…', icon: 'user', action: () => renameDialog(w) },
+    ...groupMenuItems(w),
     { label: 'Duplicate workspace', icon: 'copy', action: () => duplicate(w) },
     { sep: true },
     { label: 'Delete workspace', icon: 'trash', danger: true, action: () => deleteFlow(w) }
   ]);
+}
+
+function groupMenuItems(w) {
+  const items = [];
+  const names = [...new Set(S.workspaces().map(x => x.group).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  for (const g of names.slice(0, 6)) {
+    if (g === w.group) continue;
+    items.push({ label: `Move to “${g.slice(0, 22)}”`, icon: 'chevD', action: () => moveToGroup(w.id, g) });
+  }
+  items.push({
+    label: w.group ? 'Move to another group…' : 'Move to group…', icon: 'panel',
+    action: async () => {
+      const name = await promptModal('Group (empty = no group)', w.group || '');
+      if (name === null) return;
+      await moveToGroup(w.id, name.trim() || null);
+    }
+  });
+  if (w.group) items.push({ label: 'Remove from group', icon: 'close', action: () => moveToGroup(w.id, null) });
+  return items;
 }
 
 async function renameDialog(w) {
@@ -303,11 +396,17 @@ async function renameDialog(w) {
   }
 }
 
-async function duplicate(w) {
+export async function duplicate(w) {
   const created = await PH().workspaces.duplicate(w.id);
   await S.refresh();
   renderSidebar();
-  toast({ title: `Workspace ${created.num} created`, sub: 'Same quick links, fresh clean room', type: 'success', ic: 'copy' });
+  Tabs.switchWorkspace(created.id);
+  // pre-arm the wizard on the SAME provider: tabs, route and group carried
+  // over; one click on "Open signup page" gives the clone its own person
+  const prov = w.identity?.provider || 'atomic';
+  const { openWizardAt } = await import('./wizard.js');
+  openWizardAt(created.id, 'identity', 'guided', prov);
+  toast({ title: `Workspace ${created.num} is ready`, sub: `Tabs${w.proxy && w.proxy.mode === 'custom' ? ', proxy route' : ''}${w.group ? ', group' : ''} copied over — the wizard is pre-armed to create a fresh identity on the same provider.`, type: 'success', ic: 'copy', timeout: 7000 });
 }
 
 async function deleteFlow(w) {

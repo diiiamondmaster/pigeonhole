@@ -11,6 +11,9 @@ const extensions = require('./extensions');
 const { applyWorkspaceProxy } = require('./proxy');
 const pool = require('./proxypool');
 const backups = require('./backups');
+const sync = require('./sync');
+const applock = require('./applock');
+const traffic = require('./traffic');
 
 const WS_ID = /^[a-zA-Z0-9-]{1,40}$/;
 
@@ -56,6 +59,7 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
   ipcMain.handle('ph:ws-create', (_e, opts = {}) => {
     const ws = store.createWorkspace({ name: str(opts?.name, 80), hue: Number.isFinite(opts?.hue) ? opts.hue : null });
     sessionForPartition('persist:' + ws.id);
+    traffic.hook(ws.id);
     // free pool: new workspaces get an automatic exit unless opted out
     if (store.state.settings.poolAutoNewWorkspaces) {
       queueAutoAssign(ws.id);
@@ -69,11 +73,38 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     const src = store.getWorkspace(wsId);
     if (!src) throw bad('no such workspace');
     const ws = store.createWorkspace({ hue: src.hue });
-    // quick links carry over; the identity and browsing data stay fresh
+    // beta.7 "same setup, new person": the tab set, the network route and
+    // the group carry over; the identity and browsing data stay fresh (the
+    // renderer opens the wizard pre-armed on the same provider)
     ws.quickLinks = Array.isArray(src.quickLinks) ? [...src.quickLinks] : [];
+    ws.group = src.group || null;
+    if (src.name && !/^Workspace \d+$/.test(src.name)) ws.name = `${src.name} (copy)`;
+    if (src.proxy && src.proxy.enabled && src.proxy.mode === 'custom') {
+      // own-proxy routes are copied verbatim (the password box is
+      // machine-local, and this clone lives on the same machine)
+      ws.proxy = { ...src.proxy };
+    }
     store.save();
+    // the source workspace's tabs ride along (fresh tab ids on restore)
+    const srcTabs = store.getTabs(src.id);
+    if (Array.isArray(srcTabs) && srcTabs.length) {
+      store.saveTabs(ws.id, srcTabs.map(t => ({ ...t, id: undefined, active: false })));
+    }
     sessionForPartition('persist:' + ws.id);
+    traffic.hook(ws.id);
+    if (store.state.settings.poolAutoNewWorkspaces && !(ws.proxy && ws.proxy.enabled)) {
+      queueAutoAssign(ws.id);
+    }
+    send('state-changed', { reason: 'ws-create', wsId: ws.id, duplicatedFrom: wsId });
     return { id: ws.id, num: ws.num, name: ws.name, hue: ws.hue };
+  });
+
+  // sidebar groups (beta.7): a label per workspace; null = ungrouped
+  ipcMain.handle('ph:ws-set-group', (_e, wsId, group) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    store.setGroup(wsId, group);
+    send('state-changed', { reason: 'ws-group', wsId });
+    return true;
   });
 
   ipcMain.handle('ph:ws-remove', async (_e, wsId) => {
@@ -436,7 +467,21 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
   });
 
   ipcMain.handle('ph:ui-set', (_e, patch) => {
-    if (patch && typeof patch === 'object') store.setUi({ sidebarCollapsed: !!patch.sidebarCollapsed, activeWsId: WS_ID.test(patch.activeWsId || '') ? patch.activeWsId : store.state.ui.activeWsId });
+    if (patch && typeof patch === 'object') {
+      const out = {
+        sidebarCollapsed: !!patch.sidebarCollapsed,
+        activeWsId: WS_ID.test(patch.activeWsId || '') ? patch.activeWsId : store.state.ui.activeWsId
+      };
+      // sidebar group collapse state (beta.7): { groupName: boolean }
+      if (patch.wsGroupCollapsed && typeof patch.wsGroupCollapsed === 'object') {
+        const g = {};
+        for (const [k, v] of Object.entries(patch.wsGroupCollapsed).slice(0, 60)) {
+          if (typeof k === 'string' && k.length <= 40) g[k.slice(0, 40)] = !!v;
+        }
+        out.wsGroupCollapsed = g;
+      }
+      store.setUi(out);
+    }
     return true;
   });
 
@@ -488,6 +533,49 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     const { canceled, filePaths } = await dialog.showOpenDialog(w, { properties: ['openDirectory'] });
     return canceled ? null : (filePaths[0] || null);
   });
+
+  // ---------- cross-device sync (beta.7) ----------
+  ipcMain.handle('ph:sync-status', () => sync.status());
+  ipcMain.handle('ph:sync-setup', (_e, { dir, passphrase } = {}) => {
+    if (typeof dir !== 'string' || !dir.trim()) throw bad('bad dir');
+    if (typeof passphrase !== 'string' || passphrase.length < 4) throw bad('passphrase too short (4+ chars)');
+    return sync.setup({ dir: dir.trim(), passphrase });
+  });
+  ipcMain.handle('ph:sync-disable', () => sync.disable());
+  ipcMain.handle('ph:sync-now', async () => sync.syncNow());
+  ipcMain.handle('ph:sync-export-file', async (_e, { passphrase, wsId = null } = {}) => {
+    if (typeof passphrase !== 'string' || passphrase.length < 4) throw bad('passphrase too short (4+ chars)');
+    if (wsId != null && !WS_ID.test(wsId)) throw bad('bad id');
+    return sync.exportToFile({ passphrase, wsId: wsId || null });
+  });
+  ipcMain.handle('ph:sync-import-file', async (_e, { passphrase } = {}) => {
+    if (typeof passphrase !== 'string' || passphrase.length < 4) throw bad('passphrase too short (4+ chars)');
+    return sync.importFromFile({ passphrase });
+  });
+  ipcMain.handle('ph:sync-pick-dir', async () => {
+    const w = getWindow();
+    if (!w) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(w, { properties: ['openDirectory'], title: 'Choose the sync folder' });
+    return canceled ? null : (filePaths[0] || null);
+  });
+
+  // ---------- app lock (beta.7) ----------
+  ipcMain.handle('ph:lock-status', () => applock.isLocked());
+  ipcMain.handle('ph:lock-set-pin', (_e, pin) => applock.setPin(pin));
+  ipcMain.handle('ph:lock-clear-pin', () => applock.clearPin());
+  ipcMain.handle('ph:lock-lock', () => applock.lock());
+  ipcMain.handle('ph:lock-unlock', (_e, pin) => applock.tryUnlock(str(pin, 12)));
+  ipcMain.handle('ph:lock-activity', () => { applock.noteActivity(); return true; });
+  ipcMain.handle('ph:lock-set-policy', (_e, { idleMinutes, lockOnMinimize } = {}) => {
+    const c = store.state.settings.appLock || (store.state.settings.appLock = {});
+    if (idleMinutes != null) c.idle = Math.max(0, Math.min(240, Number(idleMinutes) || 0));
+    if (lockOnMinimize != null) c.lockOnMinimize = !!lockOnMinimize;
+    store.save();
+    return applock.isLocked();
+  });
+
+  // ---------- traffic meter (beta.7) ----------
+  ipcMain.handle('ph:traffic-get', () => traffic.read());
 }
 
 module.exports = { registerIpc };

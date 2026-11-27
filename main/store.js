@@ -51,9 +51,13 @@ function defaultState() {
     settings: { ...DEFAULT_SETTINGS },
     ui: { sidebarCollapsed: false, activeWsId: null },
     nextWsNum: 1,
-    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,proxy,backups,createdAt}
-    tabs: {},                   // wsId -> [{id,url,title,active,favicon}]
-    history: {}                 // wsId -> [{url,title,at}]
+    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,proxy,backups,createdAt,updatedAt,group}
+    tabs: {},                   // wsId -> [{id,url,title,active,favicon,pinned}]
+    history: {},                // wsId -> [{url,title,at}]
+    // cross-device sync metadata (beta.7): every mutation stamps updatedAt,
+    // deletions leave tombstones, and each store carries a device id
+    sync: { deviceId: null, rev: 0 },
+    deleted: {}                 // wsId -> removedAt (tombstone: never resurrect)
   };
 }
 
@@ -103,6 +107,14 @@ class Store {
       this.encryptionAvailable = safeStorage.isEncryptionAvailable();
     } catch { this.encryptionAvailable = false; }
     this.state.settings.vaultEncrypted = this.encryptionAvailable;
+    // sync metadata backfill (existing stores upgrade in place)
+    if (!this.state.sync || typeof this.state.sync !== 'object') this.state.sync = { deviceId: null, rev: 0 };
+    if (!this.state.sync.deviceId) { this.state.sync.deviceId = 'dev-' + crypto.randomBytes(8).toString('hex'); this.save(); }
+    this.state.sync.rev = Number(this.state.sync.rev) || 0;
+    if (!this.state.deleted || typeof this.state.deleted !== 'object') this.state.deleted = {};
+    for (const w of this.state.workspaces) {
+      if (typeof w.updatedAt !== 'number') w.updatedAt = w.createdAt || Date.now();
+    }
     this._migrate();
   }
 
@@ -133,10 +145,17 @@ class Store {
   }
 
   // ---------- persistence ----------
+  // sync: bump a workspace's merge clock. Called by every mutation path
+  // (rename, proxy, vault, tabs, history, group, quick links...).
+  touchWs(id) {
+    const w = this.getWorkspace(id);
+    if (w) w.updatedAt = Date.now();
+  }
   save() {
     if (this._saveTimer) return;
     this._saveTimer = setTimeout(() => {
       this._saveTimer = null;
+      this.state.sync.rev = (Number(this.state.sync.rev) || 0) + 1;
       this._flush();
     }, 350);
   }
@@ -149,6 +168,12 @@ class Store {
     } catch (e) {
       console.error('[store] save failed:', e.message);
     }
+    for (const fn of this._flushHooks) { try { fn(); } catch (e) { console.error('[store] flush hook:', e.message); } }
+  }
+  // observers of completed flushes (the sync writer listens here)
+  onFlush(fn) {
+    (this._flushHooks = this._flushHooks || []).push(fn);
+    return () => { const i = this._flushHooks.indexOf(fn); if (i >= 0) this._flushHooks.splice(i, 1); };
   }
   flushNow() { if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; } this._flush(); }
 
@@ -164,7 +189,9 @@ class Store {
       accounts: [],      // [{origin,email,password(secret),title,createdAt,updatedAt}]
       quickLinks: [],
       proxy: null,       // {enabled,scheme,host,port,username,password(secret),bypass}
-      createdAt: Date.now()
+      group: null,       // sidebar group label (beta.7)
+      createdAt: Date.now(),
+      updatedAt: Date.now()   // sync clock: mutations bump this (LWW per workspace)
     };
     this.state.workspaces.push(ws);
     this.state.tabs[id] = [];
@@ -230,6 +257,9 @@ class Store {
     this.state.workspaces.splice(i, 1);
     delete this.state.tabs[id];
     delete this.state.history[id];
+    // tombstone: a sync peer holding an older snapshot of this workspace
+    // must not resurrect it ("never go backwards")
+    this.state.deleted[id] = Date.now();
     if (this.state.ui.activeWsId === id) {
       this.state.ui.activeWsId = this.state.workspaces[0]?.id || null;
     }
@@ -272,6 +302,7 @@ class Store {
     if (!ws.name || /^Workspace \d+$/.test(ws.name)) {
       ws.name = String(email || `Workspace ${ws.num}`).split('@')[0];
     }
+    this.touchWs(wsId);
     this.save();
     return this.sanitizeIdentity(ws.identity);
   }
@@ -286,6 +317,7 @@ class Store {
     if (typeof patch.displayName === 'string') ws.identity.displayName = patch.displayName.trim();
     if (typeof patch.provider === 'string') ws.identity.provider = patch.provider;
     if (typeof patch.password === 'string' && patch.password) ws.identity.password = this.encryptSecret(patch.password);
+    this.touchWs(wsId);
     this.save();
     return this.sanitizeIdentity(ws.identity);
   }
@@ -316,6 +348,7 @@ class Store {
         title: String(title || ''), createdAt: Date.now(), updatedAt: Date.now()
       });
     }
+    this.touchWs(wsId);
     this.save();
     return true;
   }
@@ -327,6 +360,7 @@ class Store {
     const i = ws.accounts.findIndex(a => a.origin === o && a.email === email);
     if (i === -1) return false;
     ws.accounts.splice(i, 1);
+    this.touchWs(wsId);
     this.save();
     return true;
   }
@@ -343,10 +377,11 @@ class Store {
   saveTabs(wsId, tabs) {
     if (!this.getWorkspace(wsId)) return;
     const clean = (Array.isArray(tabs) ? tabs : []).filter(t => t && typeof t.url === 'string').map(t => ({
-      id: String(t.id), url: t.url, title: String(t.title || ''), active: !!t.active,
+      id: String(t.id), url: t.url, title: String(t.title || ''), active: !!t.active, pinned: !!t.pinned,
       favicon: typeof t.favicon === 'string' ? t.favicon.slice(0, 200000) : null
     }));
     this.state.tabs[wsId] = clean;
+    this.touchWs(wsId);
     this.save();
   }
   getTabs(wsId) { return this.state.tabs[wsId] || []; }
@@ -358,6 +393,7 @@ class Store {
     if (last && last.url === url) { last.title = title || last.title; return; }
     h.push({ url, title: String(title || ''), at: Date.now() });
     if (h.length > 400) h.splice(0, h.length - 400);
+    this.touchWs(wsId);
     this.save();
   }
   getHistory(wsId) { return (this.state.history[wsId] || []).slice(-40).reverse(); }
@@ -373,6 +409,7 @@ class Store {
     if (typeof patch.adshieldLevel === 'string' && ['basic', 'standard', 'strict'].includes(patch.adshieldLevel)) {
       this.state.settings.adshield.level = patch.adshieldLevel;
     }
+    this.state.settings.updatedAt = Date.now();   // sync clock for settings (LWW)
     this.save();
     return this.getSettings();
   }
@@ -399,6 +436,18 @@ class Store {
     this.save();
   }
 
+  // sidebar group label (beta.7): null = ungrouped
+  setGroup(wsId, group) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return false;
+    const g = (group == null || !String(group).trim()) ? null : String(group).trim().slice(0, 40);
+    if (ws.group === g) return false;
+    ws.group = g;
+    this.touchWs(wsId);
+    this.save();
+    return true;
+  }
+
   // snapshot for renderer (no secrets)
   snapshot() {
     return {
@@ -415,6 +464,8 @@ class Store {
         accountCount: w.accounts.length,
         quickLinks: w.quickLinks || [],
         proxy: this.sanitizeProxy(w.proxy),
+        group: w.group || null,
+        updatedAt: w.updatedAt || w.createdAt || 0,
         createdAt: w.createdAt
       })),
       tabs: Object.fromEntries(Object.entries(this.state.tabs).map(([k, v]) => [k, v])),

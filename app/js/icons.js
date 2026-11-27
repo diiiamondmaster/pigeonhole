@@ -30,6 +30,7 @@ const PATHS = {
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.8" x2="12" y2="8.2"/>',
   user: '<path d="M20 21v-1.8a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4V21"/><circle cx="12" cy="7.2" r="4"/>',
   shield: '<path d="M12 21.5s7.5-3.3 7.5-9.4V5.3L12 2.5l-7.5 2.8v6.8c0 6.1 7.5 9.4 7.5 9.4z"/>',
+  pin: '<path d="M12 16.5V21.5"/><path d="M8.5 3.5h7l-1 6 2.5 2.5v1.5H7V12l2.5-2.5z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   dice: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.1" fill="currentColor" stroke="none"/>',
   arrowR: '<line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/>',

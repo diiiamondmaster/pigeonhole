@@ -39,6 +39,9 @@ function buildAppMenu(getWindow) {
         S('New &Workspace', 'new-workspace', 'CmdOrCtrl+Shift+N'),
         S('&Close Tab', 'close-tab', 'CmdOrCtrl+W'),
         { type: 'separator' },
+        S('Search tabs across work&spaces…', 'tab-switcher', 'CmdOrCtrl+K'),
+        S('&Undo Close Tab', 'undo-close', 'CmdOrCtrl+Shift+T'),
+        { type: 'separator' },
         S('&Settings', 'settings', 'CmdOrCtrl+,'),
         ...(process.platform !== 'darwin' ? [{ role: 'quit' }] : [])
       ]
@@ -65,9 +68,25 @@ function buildAppMenu(getWindow) {
         { type: 'separator' },
         S('Toggle &Sidebar', 'toggle-sidebar', 'CmdOrCtrl+B'),
         S('&Extensions panel', 'ext-panel', 'CmdOrCtrl+Shift+E'),
+        S('&Reader view', 'reader', 'CmdOrCtrl+Alt+R'),
+        S('&Pop video into picture-in-picture', 'pip', 'CmdOrCtrl+Alt+P'),
         S('&Fullscreen', 'fullscreen', 'F11'),
         { type: 'separator' },
         { role: 'toggleDevTools' }
+      ]
+    },
+    {
+      label: '&Workspaces',
+      submenu: [
+        S('Next workspace (MR&U)', 'cycle-ws', 'CmdOrCtrl+Tab'),
+        S('Previous workspace (MRU)', 'cycle-ws-back', 'CmdOrCtrl+Shift+Tab'),
+        { type: 'separator' },
+        ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({
+          label: `Workspace &${n}`, accelerator: `CmdOrCtrl+${n}`,
+          click: () => send(getWindow, { action: 'ws-switch', n })
+        })),
+        { type: 'separator' },
+        S('&Lock now (app lock)', 'lock', 'CmdOrCtrl+Shift+L')
       ]
     },
     {
@@ -171,6 +190,21 @@ function buildGuestMenu(win, wc, params) {
     }));
     menu.append(new MenuItem({ type: 'separator' }));
   }
+
+  menu.append(new MenuItem({ type: 'separator' }));
+
+  // beta.7 page tools: reader view and picture-in-picture, executed in the
+  // page being right-clicked (the chrome action handler targets the active
+  // tab, which is the one this menu belongs to)
+  menu.append(new MenuItem({
+    label: 'Reader view', accelerator: 'CmdOrCtrl+Alt+R',
+    click: () => go('reader')
+  }));
+  menu.append(new MenuItem({
+    label: 'Pop video out (picture-in-picture)', accelerator: 'CmdOrCtrl+Alt+P',
+    click: () => go('pip')
+  }));
+  menu.append(new MenuItem({ type: 'separator' }));
 
   menu.append(new MenuItem({
     label: 'Inspect element',
