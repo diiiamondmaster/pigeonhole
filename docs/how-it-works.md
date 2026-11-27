@@ -96,6 +96,55 @@ small polled action queue instead of any privileged bridge.
   `ph:vault-secret` channel (reveal/copy); the state snapshot it gets for
   rendering never contains them.
 
+## The free proxy pool (v2)
+
+`main/proxypool.js` gives workspaces exits through public community proxies
+without the user owning one. The v2 line is built around one lesson: a
+single 204 ping says nothing about whether an exit can carry real browsing,
+so every decision below is made on measured, real-world quality.
+
+- **Fetch.** Public proxy lists (monosans, Geonode, ProxyScrape, TheSpeedX,
+  Proxifly, mmpx12, roosterkid - all free and key-less) are downloaded with
+  Node's http stack, never through a workspace proxy, and parsed into
+  candidates.
+- **Verify, two tiers.** Tier 1 is the classic 204 probe through a scratch
+  in-memory session: can the tunnel answer at all (a 407 from a credentialed
+  HTTP exit counts as alive). Tier 2 fetches real content through the
+  candidate (Cloudflare's `cdn-cgi/trace` by default): status 200, real body
+  bytes, TLS end-to-end, and the answer even improves the exit's country
+  data. Candidates that pass only tier 1 are marked **weak** - last resort,
+  never preferred. If the tier-2 target itself is unreachable directly, the
+  gate fails open instead of punishing every exit.
+- **Score.** Each verified exit carries a living 0-100+ score: EWMA latency
+  (100ms maps to 100 points, ~1.2s to 0), reliability from probe and
+  real-page success history (failures weigh double), a stability bonus for
+  surviving checks, +12 for passing the content gate (weak exits are capped
+  at 35), +18 / +8 for same country / same region as you, and -10 when
+  measured throughput falls below ~30 KB/s. Assignments, rotations and
+  standbys all order by score.
+- **Proximity.** Your country is detected once a day by a direct,
+  unproxied call (Cloudflare trace or ip-api) and cached to disk - it feeds
+  the score and the *Nearby region only* preference; it is never sent
+  anywhere.
+- **The supervisor.** A background sweep (every ~45s) re-probes every
+  ASSIGNED exit (tier 1 always; the content check and a ~12 KB throughput
+  sample periodically) plus the six best free standbys, so a failover
+  target is always pre-warmed. Page outcomes feed the score too: each
+  webview reports load success/failure for its workspace's exit
+  (`ph:pool-note-page`), and failures accumulate with decay.
+- **Seamless swaps.** A dead exit (two consecutive failed sweeps) is
+  replaced immediately; a degraded one (broken content check, sustained
+  page failures, starved bandwidth, or high latency) is upgraded only when
+  a free standby beats it by a clear margin and an anti-flap cooldown has
+  passed. Swaps go through the normal per-workspace proxy machinery but
+  with `reload: false`: the new route covers new requests while
+  already-rendered pages keep working. Only a page-error-triggered heal
+  (the last line of defence) reloads the failing tab.
+- **Robustness.** If the machine is offline (every direct control fails)
+  the sweep is skipped rather than blaming exits; the pool cache persists
+  scores, history and your detected country, but restored entries must
+  re-probe alive before they are assignable again.
+
 ## The self-updater
 
 `main/updater.js` owns the whole flow; the renderer (`app/js/updates.js`)

@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.1.0-beta.4 - 2026-11-27 (beta channel)
+
+The proxy pool grows up: exits are now chosen for real-world quality, watched
+continuously, and swapped in the background without reloading your pages.
+This is the answer to the beta feedback that exits were far away, slow, and
+unreliable in actual browsing.
+
+- **Two-tier verification.** A 204 ping only proves a proxy can answer one
+  empty request. Candidates that pass it now face a *real-content check*: a
+  genuine page fetch through the candidate (Cloudflare's trace endpoint by
+  default), status 200 with real body bytes and working TLS. Exits that can
+  only ping - the classic "fast but useless" open proxies - are marked
+  **weak**, ranked last, and never assigned while a content-verified exit
+  exists.
+- **Quality scoring.** Every exit carries a living score (0-100+): EWMA
+  latency across repeated checks, probe success history, how many refresh
+  cycles it survived, measured throughput on assigned exits, and a
+  real-content bonus. Assignments and rotations order by score, not by a
+  single ping.
+- **Geographic proximity.** Your own country is detected once a day (direct
+  connection, never through a proxy) and same-country exits score +18,
+  same-region +8 - so a nearby exit wins over a far one unless the far one
+  is dramatically faster. The region selector gains *Smart pick (fastest +
+  nearby)* and *Nearby region only*; an exact country still pins the exit.
+- **The supervisor (continuous monitoring).** Every ~45s the pool re-probes
+  every ASSIGNED exit plus the top standbys: latency, real-content,
+  throughput, and - new - your actual page loads feed the score (every
+  workspace reports load success/failure). Two consecutive failed probes, a
+  broken content check, sustained page failures, or a bandwidth-starved exit
+  trigger a swap.
+- **Seamless transitions.** Supervisor swaps apply the new route to the
+  session *without reloading any page*: already-rendered pages keep working,
+  new requests leave through the better exit. A dead exit is replaced
+  proactively - typically before any tab notices. When a swap happens on the
+  active workspace you get a quiet toast (*Exit replaced automatically* /
+  *Exit upgraded*); nothing else disturbs browsing. The reactive
+  page-error watchdog stays as the last line of defence.
+- **No churn without a payoff.** Quality upgrades need a free standby that
+  beats the current exit by a clear margin plus an anti-flap cooldown; dead
+  exits swap immediately (sharing an exit beats none). If the network itself
+  is down - or a check target is - the supervisor skips the sweep rather
+  than blaming the exits.
+- **Wider, faster pool.** Three more public sources (Proxifly, mmpx12,
+  roosterkid - free, key-less) join monosans/Geonode/ProxyScrape/TheSpeedX
+  for better odds of a nearby fast exit; checks run 12-wide with tighter
+  timeouts. Pool state (scores, history, your detected country) persists to
+  the existing disk cache, and restored entries must re-probe alive before
+  they are assignable again.
+- **Settings reflect all of it.** Settings -> Network and the workspace
+  Network panel now show ready/weak counts, monitoring cadence and this
+  session's auto-swap count, and your detected country.
+- E2E: new 21-check suite (`scripts/test-pool2.mjs`) against engineered
+  fakes - a "ghost" proxy that only answers pings (never assigned, reported
+  weak), a "liar" that answers every check but breaks real pages (page
+  feedback degrades it, no churn without a better exit, upgrade when one
+  appears), proximity ranking (nearby beats far-faster), and a proactive
+  failover that provably does not reload the open page (frozen hit counter)
+  while new pages work through the replacement. The original 27-check pool
+  suite, the 43-check UI suite, the 20-check v1.0.5 suite and the 17-check
+  updater suite all still pass.
+
 ## 1.1.0-beta.3 - 2026-11-26 (beta channel)
 
 The free proxy pool: workspaces can exit through community proxies without

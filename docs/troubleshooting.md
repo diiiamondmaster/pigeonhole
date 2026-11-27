@@ -63,3 +63,22 @@ Pigeonhole runs on the GPU stack Chromium picks; on very old graphics
 drivers Chromium falls back to software rendering automatically. If pages
 stay blank, start the app once with `Pigeonhole.exe --disable-gpu` to force
 the fallback.
+
+## Pages are slow or a workspace keeps rotating exits
+
+Auto (free pool) exits are community proxies, and their quality varies by
+the hour. Pigeonhole continuously measures each exit (latency, a real
+content check, throughput and your own page results) and swaps bad ones in
+the background - if you see frequent *Exit replaced / Exit upgraded*
+toasts, the pool around you is genuinely thin at the moment. Things to try:
+
+- *Refresh the pool now* in Settings -> Network re-verifies everything and
+  widens the candidate set.
+- Pick a specific country in the workspace's Network section if a nearby
+  region is thin (or *Nearby region only* if you never want far exits).
+- Switch the workspace to *Direct* (your own IP) or *Custom* (your own
+  proxy) when a workspace must stay reliably fast - the free pool is a
+  convenience, not a service-level agreement.
+- Check *usable / weak* counts in Settings -> Network: a large *weak* number
+  means many candidates can ping but not carry pages right now; the app
+  already refuses to assign those while real exits exist.
