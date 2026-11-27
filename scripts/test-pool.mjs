@@ -65,6 +65,9 @@ async function main() {
     PH_E2E: '1', PH_APP_URL: `http://127.0.0.1:${APP_PORT}/index.html`,
     PH_POOL_SOURCES: fakes.sourcesEnv,
     PH_POOL_CHECK_URL: fakes.checkUrl,
+    PH_POOL_TIER2_URL: fakes.traceUrl,
+    PH_POOL_BULK_URL: fakes.bulkUrl,
+    PH_POOL_GEO_URL: fakes.whoamiUrl,
     PH_POOL_BYPASS: '<-loopback>',
     XDG_CONFIG_HOME: CFG, DISPLAY: process.env.DISPLAY || ':96', ELECTRON_ENABLE_LOGGING: '1'
   };

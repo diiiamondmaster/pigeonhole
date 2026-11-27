@@ -1,19 +1,24 @@
-// Shared fake proxy infrastructure for the free-pool E2E test and visual
+// Shared fake proxy infrastructure for the free-pool E2E tests and visual
 // harness. Spins up:
 //   - two plain SOCKS5 fakes (NL fast, DE slower) that tunnel traffic,
 //   - one credentialed HTTP proxy fake (PL - demands Proxy-Auth, answered
 //     through Electron's login event) and one plain HTTP fake (US),
 //   - one dead candidate (nothing listens),
-//   - a "check" server (204 probes), a site server (pages + /ip echo),
-//   - list sources in Geonode JSON + plain formats.
+//   - a "check" server (204 probes), a site server (pages + /ip echo + hit
+//     counter), a "trace" server (tier-2 content / throughput / whoami),
+//   - list sources in Geonode JSON + plain formats, mutable at runtime.
 // Delays are engineered so verification latency ranks NL < DE < PL < US,
 // which makes assignment deterministic.
+// startPoolFakes(opts) can override delays, add tunnel-filtering SOCKS
+// fakes (a "liar" that answers probes but breaks real pages, a "ghost" that
+// only answers 204 pings) and swap the served source lists mid-test.
 import http from 'http';
 import net from 'net';
 
 const CHECK_PORT = 8194;
 const SITE_PORT = 8195;
 const SRC_PORT = 8193;
+const TRACE_PORT = 8196;
 
 const fakes = [
   { name: 'nl', kind: 'socks', port: 8301, delay: 0, country: 'NL', creds: null },
@@ -28,7 +33,11 @@ function httpReply(res, code, headers, body) {
 }
 
 // ---- SOCKS5 fake (optional username/password auth) with transit logging ----
-function socksFake({ delay = 0, creds = null } = {}) {
+// tunnelFilter(host, port): when set, a target the filter rejects gets a
+// SOCKS success reply and then a dead pipe - the client sees a connection
+// that "works" at handshake level but carries no traffic (the "liar" and
+// "ghost" test proxies).
+function socksFake({ delay = 0, creds = null, tunnelFilter = null } = {}) {
   const log = [];
   const conns = new Set();
   const server = net.createServer(sock => {
@@ -76,6 +85,13 @@ function socksFake({ delay = 0, creds = null } = {}) {
         const tport = (buf[off] << 8) | buf[off + 1];
         stage = 2;
         setTimeout(() => {
+          if (tunnelFilter && !tunnelFilter(host, tport)) {
+            // lie: accept the tunnel, then drop it on the floor
+            try { sock.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0])); } catch { }
+            setTimeout(() => { try { sock.destroy(); } catch { } }, 20);
+            log.push(`${Date.now()} REFUSED-TUNNEL ${host}:${tport}`);
+            return;
+          }
           const up = net.connect(tport, host, () => {
             try { sock.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0])); } catch { }
             up.pipe(sock);
@@ -132,17 +148,26 @@ function httpFake({ port, delay, creds, ip, authDelay = 0 }) {
 }
 
 // ---- infrastructure ----
-export async function startPoolFakes() {
+export async function startPoolFakes(opts = {}) {
+  const { delays = {}, extraFakes = [] } = opts;
   const socks = {};
   const https_ = {};
+  const extras = {};
   const closeable = [];
   const listen = (srv, port) => new Promise(r => srv.listen(port, '127.0.0.1', () => r()));
 
   for (const f of fakes) {
-    const impl = f.kind === 'socks' ? socksFake(f) : httpFake(f);
+    const cfg = { ...f, delay: delays[f.name] != null ? delays[f.name] : f.delay };
+    const impl = f.kind === 'socks' ? socksFake(cfg) : httpFake(cfg);
     await listen(impl.server, f.port);
     closeable.push(impl.server);
     if (f.kind === 'socks') socks[f.name] = impl; else https_[f.name] = impl;
+  }
+  for (const f of extraFakes) {
+    const impl = socksFake(f);      // extras are always SOCKS with a filter
+    await listen(impl.server, f.port);
+    closeable.push(impl.server);
+    extras[f.name] = impl;
   }
 
   // check server: answers 204 to any path
@@ -150,29 +175,56 @@ export async function startPoolFakes() {
   await listen(checkSrv, CHECK_PORT);
   closeable.push(checkSrv);
 
-  // site server: the origin the webviews load + a /ip echo
+  // site server: the origin the webviews load + a /ip echo + a hit counter
+  // (the counter proves whether a page was reloaded after a swap)
+  let countHits = 0;
   const siteSrv = http.createServer((req, res) => {
-    if (/\/ip\b/.test(req.url || '')) return httpReply(res, 200, { 'content-type': 'application/json' }, JSON.stringify({ ip: '9.9.9.9' }));
+    const u = req.url || '';
+    if (/\/ip\b/.test(u)) return httpReply(res, 200, { 'content-type': 'application/json' }, JSON.stringify({ ip: '9.9.9.9' }));
+    if (/^\/count/.test(u)) {
+      countHits++;
+      return httpReply(res, 200, { 'content-type': 'text/html' }, `<!doctype html><html><body><h1 id="mk">hits-${countHits}</h1></body></html>`);
+    }
     return httpReply(res, 200, { 'content-type': 'text/html' }, '<!doctype html><html><body><h1 id="mk">pool-ok</h1></body></html>');
   });
   await listen(siteSrv, SITE_PORT);
   closeable.push(siteSrv);
 
-  // sources server
-  const geoSocks = { data: [
+  // trace server: tier-2 content, throughput payload and the user's location
+  // oracle (deliberately on its own port so tunnel-filter fakes can allow
+  // probes but break real pages - and the other way around)
+  const BULK = Buffer.alloc(12 * 1024, 'x');
+  const traceSrv = http.createServer((req, res) => {
+    const u = req.url || '';
+    if (/^\/trace/.test(u)) return httpReply(res, 200, { 'content-type': 'text/plain' }, 'fl=fake\nh=ok\nip=9.9.9.9\nts=1234\nwarp=off\n');
+    if (/^\/bulk/.test(u)) return httpReply(res, 200, { 'content-type': 'application/octet-stream' }, BULK);
+    if (/^\/whoami/.test(u)) return httpReply(res, 200, { 'content-type': 'text/plain' }, 'loc=NL\nip=1.2.3.4\n');
+    httpReply(res, 404, {}, 'nf');
+  });
+  await listen(traceSrv, TRACE_PORT);
+  closeable.push(traceSrv);
+
+  // sources server - the served lists are mutable so a test can introduce a
+  // better proxy mid-run and watch the supervisor upgrade to it
+  const DEFAULT_GEO_SOCKS = [
     { ip: '127.0.0.1', port: 8301, country: 'NL' },
     { ip: '127.0.0.1', port: 8302, country: 'DE' },
     { ip: '127.0.0.1', port: 8305, country: 'XX' }      // dead candidate
-  ] };
-  const geoHttp = { data: [
+  ];
+  const DEFAULT_GEO_HTTP = [
     { ip: '127.0.0.1', port: 8304, country: 'PL' },     // credentialed (declared in plain.txt)
     { ip: '127.0.0.1', port: 8303, country: 'US' }
-  ] };
-  const plainTxt = 'u1:p9@127.0.0.1:8304\n';
+  ];
+  const DEFAULT_PLAIN = 'u1:p9@127.0.0.1:8304\n';
+  let served = {
+    geoSocks: DEFAULT_GEO_SOCKS,
+    geoHttp: DEFAULT_GEO_HTTP,
+    plain: DEFAULT_PLAIN
+  };
   const srcSrv = http.createServer((req, res) => {
-    if (req.url === '/geo-socks.json') return httpReply(res, 200, { 'content-type': 'application/json' }, JSON.stringify(geoSocks));
-    if (req.url === '/geo-http.json') return httpReply(res, 200, { 'content-type': 'application/json' }, JSON.stringify(geoHttp));
-    if (req.url === '/plain.txt') return httpReply(res, 200, { 'content-type': 'text/plain' }, plainTxt);
+    if (req.url === '/geo-socks.json') return httpReply(res, 200, { 'content-type': 'application/json' }, JSON.stringify({ data: served.geoSocks }));
+    if (req.url === '/geo-http.json') return httpReply(res, 200, { 'content-type': 'application/json' }, JSON.stringify({ data: served.geoHttp }));
+    if (req.url === '/plain.txt') return httpReply(res, 200, { 'content-type': 'text/plain' }, served.plain);
     httpReply(res, 404, {}, 'nf');
   });
   await listen(srcSrv, SRC_PORT);
@@ -185,13 +237,30 @@ export async function startPoolFakes() {
   ]);
 
   return {
-    ports: { check: CHECK_PORT, site: SITE_PORT, src: SRC_PORT },
-    logs: { nl: socks.nl.log, de: socks.de.log, pl: https_.pl.log, us: https_.us.log },
-    servers: { nl: socks.nl.server, de: socks.de.server, pl: https_.pl.server, us: https_.us.server },
-    kill: (name) => { const f = name === 'nl' ? socks.nl : name === 'de' ? socks.de : name === 'pl' ? https_.pl : https_.us; f.kill(); },
+    ports: { check: CHECK_PORT, site: SITE_PORT, src: SRC_PORT, trace: TRACE_PORT },
+    logs: {
+      nl: socks.nl.log, de: socks.de.log, pl: https_.pl.log, us: https_.us.log,
+      ...Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v.log]))
+    },
+    servers: {
+      nl: socks.nl.server, de: socks.de.server, pl: https_.pl.server, us: https_.us.server,
+      ...Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v.server]))
+    },
+    kill: (name) => {
+      const f = name === 'nl' ? socks.nl : name === 'de' ? socks.de : name === 'pl' ? https_.pl
+        : name === 'us' ? https_.us : extras[name];
+      if (f) f.kill();
+    },
     sourcesEnv,
+    getCount: () => countHits,
+    setSources: (patch) => { served = { ...served, ...patch }; },
+    resetSources: () => { served = { geoSocks: DEFAULT_GEO_SOCKS, geoHttp: DEFAULT_GEO_HTTP, plain: DEFAULT_PLAIN }; },
     siteUrl: (p = '/pool-target.html') => `http://127.0.0.1:${SITE_PORT}${p}`,
+    countUrl: () => `http://127.0.0.1:${SITE_PORT}/count`,
     checkUrl: `http://127.0.0.1:${CHECK_PORT}/204`,
+    traceUrl: `http://127.0.0.1:${TRACE_PORT}/trace`,
+    bulkUrl: `http://127.0.0.1:${TRACE_PORT}/bulk`,
+    whoamiUrl: `http://127.0.0.1:${TRACE_PORT}/whoami`,
     close: () => closeable.forEach(s => { try { s.close(); } catch { } })
   };
 }
