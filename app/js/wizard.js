@@ -4,7 +4,7 @@
 //
 // The signup page opens inside the workspace itself, so the account is born in
 // the very session (cookies, storage) it will live in.
-import { el, qs, escapeHtml, strength, fmtDate, copyText } from './util.js';
+import { el, qs, escapeHtml, strength, copyText } from './util.js';
 import { icon } from './icons.js';
 import * as S from './state.js';
 import { bus, PH } from './state.js';
@@ -76,8 +76,6 @@ export function openWizard(wsId) {
         pwCustom: '', pwGen: genPassword(st.pwLength || 16, st.pwSymbols !== false),
         extras
       },
-      // instant-address mode (mail.tm): one API call, no CAPTCHA, live inbox
-      instant: { address: '', msgs: [], lastPoll: 0, known: [], openMsg: null, msgDetail: null, busy: false, error: '' },
       // multi-step signup pages need several attempts: the budget only counts
       // fills that actually filled something, so dead screens burn nothing
       fillsLeft: 8, fillReport: null, wizardTabId: null, created: false, providerName: ''
@@ -140,8 +138,7 @@ function renderPanel() {
 
 function stepsBar(s) {
   const steps = s.mode === 'existing' ? ['path', 'identity', 'confirm']
-    : s.mode === 'instant' ? ['path', 'instant', 'inbox']
-      : ['path', 'provider', 'identity', 'create', 'confirm'];
+    : ['path', 'provider', 'identity', 'create', 'confirm'];
   const idx = steps.indexOf(s.step);
   return el('div', { class: 'wz-steps' },
     steps.map((_, i) => el('div', { class: `st ${i < idx ? 'done' : ''} ${i === idx ? 'cur' : ''}` })));
@@ -149,8 +146,6 @@ function stepsBar(s) {
 
 function stepBody(s) {
   if (s.step === 'path') return stepPath(s);
-  if (s.step === 'instant') return stepInstant(s);
-  if (s.step === 'inbox') return stepInbox(s);
   if (s.step === 'provider') return stepProvider(s);
   if (s.step === 'identity') return s.mode === 'existing' ? stepExisting(s) : stepIdentity(s);
   if (s.step === 'create') return stepCreate(s);
@@ -163,11 +158,8 @@ function stepPath(s) {
   return el('div', {},
     el('div', { class: 'field' },
       el('label', { text: 'How do you want to give this workspace an email?' })),
-    choiceCard('wand', 'Get an instant address (automatic)',
-      'Pigeonhole creates a real working mailbox for you over the free mail.tm service - no CAPTCHA, no forms, nothing personal. The inbox fills in right here. Best when signup sites just need to receive mail.',
-      s.mode === 'instant', () => { s.mode = 'instant'; s.step = (S.ws(s.wsId)?.disposable?.address) ? 'inbox' : 'instant'; renderPanel(); }),
     choiceCard('mail', 'Create a new email account (guided)',
-      'Pick a provider that does not demand a phone number, generate a numbered identity, and autofill the signup form. You solve the CAPTCHA, Pigeonhole does the typing.',
+      'Atomic Mail is preselected - no phone number, no personal data, works well from shared exits. Or pick another provider, generate an identity and let Pigeonhole type the signup form. You solve the CAPTCHA.',
       s.mode === 'guided', () => { s.mode = 'guided'; s.step = 'provider'; renderPanel(); }),
     choiceCard('key', 'Use an email I already have',
       'Connect a mailbox you already own. Pigeonhole remembers it as this workspace\u2019s identity and autofills it everywhere.',
@@ -186,6 +178,12 @@ function choiceCard(ic, title, sub, on, click) {
 
 // ---------------- step 2: provider ----------------
 function stepProvider(s) {
+  // the registry's first provider (Atomic Mail) is preselected: the wizard
+  // opens with a sensible default instead of an empty choice
+  if (!s.providerId && PROVIDERS.length) {
+    s.providerId = PROVIDERS[0].id;
+    s.draft.domain = PROVIDERS[0].domains[0];
+  }
   // Continue unlocks live while the custom URL is being typed, not only on
   // the re-renders triggered by card clicks.
   const gate = () => !s.providerId || (s.providerId === 'other' && !/^https?:\/\//.test(s.customUrl || ''));
@@ -548,223 +546,6 @@ async function saveIdentity(s) {
   import('./identity.js').then(m => m.syncFillBtn());
 }
 
-// ---------------- instant address (mail.tm / mail.gw) ----------------
-// local part from the same address-style machinery the guided path uses
-function instantLocal(s) {
-  const d = s.draft;
-  if (d.mode === 'numbered') return d.base ? d.base + zeroPad(d.num || 1, d.padding) : '';
-  if (d.mode === 'human') return `${d.first}.${d.last}${d.nameSuffix || 100}`.replace(/[^a-z0-9._-]/g, '');
-  if (d.mode === 'words') return d.word + (d.wordSuffix || 100);
-  return d.customLocal;
-}
-
-function stepInstant(s) {
-  const d = s.draft;
-  const st = S.settings();
-  const inst = s.instant;
-  const local = instantLocal(s);
-  const prov = S.ws(s.wsId)?.disposable;
-
-  const createBtn = el('button', {
-    class: 'btn btn-primary', html: icon('wand', 14) + ' Create the mailbox',
-    disabled: inst.busy || !local || (d.pwMode === 'custom' && !d.pwCustom),
-    onclick: () => createInstant(s)
-  });
-
-  const body = el('div', {},
-    el('div', { class: 'field' },
-      el('label', { text: 'Address style' }),
-      el('div', { class: 'seg' },
-        segBtn('numbered', 'Numbered', d.mode, () => { d.mode = 'numbered'; if (!d.num) d.num = nextNumberFor(d.base); renderPanel(); }, true),
-        segBtn('human', 'Human name', d.mode, () => { d.mode = 'human'; renderPanel(); }, true),
-        segBtn('words', 'Word pair', d.mode, () => { d.mode = 'words'; renderPanel(); }, true),
-        segBtn('custom', 'Custom', d.mode, () => { d.mode = 'custom'; renderPanel(); }, true))),
-
-    d.mode === 'numbered' ? el('div', {},
-      el('div', { class: 'row', style: { gap: '8px', marginBottom: '8px' } },
-        el('div', { class: 'field grow', style: { marginBottom: '0' } },
-          el('label', { text: 'Base handle' }),
-          el('input', { class: 'input', value: d.base, placeholder: 'your usual handle', oninput: (e) => { d.base = e.target.value.trim().replace(/[^a-zA-Z0-9._-]/g, ''); createBtn.disabled = !instantLocal(s) || inst.busy; } })),
-        el('div', { class: 'field', style: { marginBottom: '0', width: '92px' } },
-          el('label', { text: 'Number' }),
-          el('input', { class: 'input', type: 'number', min: 1, value: d.num, oninput: (e) => { d.num = Math.max(1, parseInt(e.target.value) || 1); } }))),
-      el('div', { class: 'hint', text: `Preview: ${local || '…'}@<domain chosen at creation> \u00b7 the mail.tm API picks a free domain for you.` })) : null,
-
-    d.mode === 'human' ? el('div', { class: 'row', style: { gap: '8px' } },
-      nameField('First name', d.first, (v) => { d.first = v; }, 'first'),
-      nameField('Last name', d.last, (v) => { d.last = v; }, 'last'),
-      el('button', { class: 'btn btn-ghost btn-sm', style: { alignSelf: 'flex-end' }, html: icon('dice', 13), title: 'New name', onclick: () => { const e2 = genExtras(); d.first = e2.first; d.last = e2.last; renderPanel(); } })) : null,
-
-    d.mode === 'words' ? el('div', { class: 'row', style: { gap: '8px' } },
-      el('div', { class: 'field grow', style: { marginBottom: '0' } },
-        el('label', { text: 'Word' }),
-        el('input', { class: 'input', value: d.word, oninput: (e) => { d.word = e.target.value.trim().toLowerCase().replace(/[^a-z0-9]/g, ''); createBtn.disabled = !instantLocal(s) || inst.busy; } })),
-      el('button', { class: 'btn btn-ghost btn-sm', style: { alignSelf: 'flex-end' }, html: icon('dice', 13), title: 'New word', onclick: () => { d.word = pick(WORDS); renderPanel(); } })) : null,
-
-    d.mode === 'custom' ? el('div', { class: 'field' },
-      el('label', { text: 'Local part (before the @)' }),
-      el('input', { class: 'input mono', value: d.customLocal, placeholder: 'anything-you-like', oninput: (e) => { d.customLocal = e.target.value.trim().replace(/[^a-zA-Z0-9._-]/g, ''); createBtn.disabled = !instantLocal(s) || inst.busy; } })) : null,
-
-    el('div', { class: 'divider' }),
-    el('div', { class: 'field' },
-      el('label', { text: 'Password' }),
-      el('div', { class: 'seg', style: { marginBottom: '10px' } },
-        segBtn('generate', 'Generate', d.pwMode, () => { d.pwMode = 'generate'; renderPanel(); }, true),
-        segBtn('custom', 'Custom', d.pwMode, () => { d.pwMode = 'custom'; renderPanel(); }, true)),
-      d.pwMode === 'generate'
-        ? el('div', { class: 'row' },
-            el('input', { class: 'input mono grow', readonly: '', value: d.pwGen }),
-            el('button', { class: 'btn btn-sm', html: icon('dice', 13), title: 'New password', onclick: () => { d.pwGen = genPassword(st.pwLength || 16, st.pwSymbols !== false); renderPanel(); } }))
-        : el('input', { class: 'input mono', type: 'password', placeholder: 'Type a password (8+ chars)', value: d.pwCustom, oninput: (e) => { d.pwCustom = e.target.value; createBtn.disabled = !instantLocal(s) || !d.pwCustom || inst.busy; } })),
-
-    inst.error ? el('div', { class: 'hint warn', style: { marginBottom: '10px' }, text: inst.error }) : null,
-    inst.busy ? el('div', { class: 'hint', style: { marginBottom: '10px' }, text: 'Creating the mailbox\u2026 (a few seconds)' }) : null,
-
-    el('div', { class: 'row', style: { marginTop: '14px' } },
-      el('button', { class: 'btn btn-ghost', html: icon('chevL', 14) + ' Back', onclick: () => { s.step = 'path'; renderPanel(); } }),
-      el('span', { class: 'grow' }),
-      createBtn),
-
-    el('p', { style: { fontSize: '11px', color: 'var(--text-faint)', lineHeight: '1.55', margin: '10px 0 0' }, html:
-      'Powered by <b>mail.tm</b> (with mail.gw as fallback) - free, no CAPTCHA, nothing personal. Mailboxes live until unused for months; a fresh one is always one click away. Instant addresses are disposable: some sites refuse them - use a real provider when a mailbox must last.' }),
-
-    prov?.address ? el('div', { class: 'hint', style: { marginTop: '10px' }, text: `This workspace already has ${prov.address} - creating a new one replaces it.` }) : null
-  );
-  return body;
-}
-
-async function createInstant(s) {
-  const inst = s.instant;
-  if (inst.busy) return;
-  inst.busy = true;
-  inst.error = '';
-  renderPanel();
-  try {
-    const local = instantLocal(s);
-    const password = s.draft.pwMode === 'custom' ? s.draft.pwCustom : s.draft.pwGen;
-    let rec = null, lastErr = '';
-    for (let attempt = 0; attempt < 3 && !rec; attempt++) {
-      try { rec = await PH().temp.create(s.wsId, attempt === 0 ? local : local + rnd(900)); }
-      catch (e) { lastErr = String(e.message || e); }
-    }
-    if (!rec?.address) throw new Error(lastErr || 'the service did not answer');
-    inst.address = rec.address;
-    // the workspace identity is this mailbox - fill buttons everywhere work
-    const d = s.draft;
-    await PH().vault.setIdentity(s.wsId, {
-      email: rec.address,
-      password,
-      displayName: `${d.extras.first} ${d.extras.last}`,
-      provider: 'Instant (mail.tm)'
-    });
-    await S.refresh();
-    s.step = 'inbox';
-    inst.msgs = [];
-    inst.lastPoll = 0;      // poll immediately
-    toast({ title: 'Mailbox ready', sub: rec.address + ' - identity saved, the inbox is watching', type: 'success', ic: 'check', timeout: 4200 });
-    import('./sidebar.js').then(m => m.renderSidebar());
-    import('./identity.js').then(m => m.syncFillBtn());
-  } catch (e) {
-    inst.error = 'Could not create the mailbox: ' + String(e.message || e).slice(0, 120) + '. The service may be busy - try again.';
-  }
-  inst.busy = false;
-  renderPanel();
-}
-
-function stepInbox(s) {
-  const inst = s.instant;
-  const w = S.ws(s.wsId);
-  const address = inst.address || w?.disposable?.address || w?.identity?.email || '';
-  const msgs = inst.msgs || [];
-
-  const list = msgs.length
-    ? msgs.map(m => {
-      const isOpen = inst.openMsg === m.id;
-      return el('div', { class: `msg-item ${m.seen ? 'seen' : ''} ${isOpen ? 'open' : ''}` },
-        el('div', {
-          class: 'msg-row', style: { cursor: 'pointer' },
-          onclick: () => { inst.openMsg = isOpen ? null : m.id; inst.msgDetail = null; if (!isOpen) fetchInstantMessage(s, m.id); else renderPanel(); }
-        },
-          el('span', { class: 'msg-ico', html: icon(m.seen ? 'mail' : 'inbox', 14) }),
-          el('span', { class: 'grow' },
-            el('div', { class: 'msg-subj', text: m.subject || '(no subject)' }),
-            el('div', { class: 'msg-meta', text: `${m.from || 'unknown'} \u00b7 ${fmtDate(new Date(m.createdAt || Date.now()).getTime())}` })),
-          el('span', { class: 'pill muted', text: m.hasAttachments ? 'attach' : '' })),
-        isOpen && inst.msgDetail ? msgDetailBody(s, m) : (isOpen ? el('div', { class: 'msg-body', text: 'loading\u2026' }) : null));
-    })
-    : el('div', { class: 'hint', style: { padding: '18px 6px', textAlign: 'center' }, text: inst.busy ? 'checking the inbox\u2026' : 'No mail yet. Verification mails usually arrive within a minute - this panel checks automatically.' });
-
-  return el('div', {},
-    el('div', { class: 'field' },
-      el('label', { text: 'This workspace\u2019s address' }),
-      el('div', { class: 'row' },
-        el('input', { class: 'input mono grow', readonly: '', value: address }),
-        el('button', { class: 'btn btn-sm', html: icon('copy', 14), title: 'Copy address', onclick: async () => { await copyText(address, 'Address copied'); } }))),
-    el('div', { class: 'row', style: { margin: '0 0 10px' } },
-      el('button', { class: 'btn btn-sm', html: icon('reload', 13) + ' Refresh', onclick: () => { s.instant.lastPoll = 0; renderPanel(); pollInbox(s, true); } }),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'hint', text: msgs.length ? `${msgs.length} message${msgs.length === 1 ? '' : 's'}` : '' })),
-    el('div', { class: 'msg-list' }, list),
-    el('p', { style: { fontSize: '10.5px', color: 'var(--text-faint)', margin: '10px 0 0', lineHeight: '1.5' }, html:
-      'Instant inboxes by <b>mail.tm</b> \u00b7 this panel polls while it stays open, never through the workspace proxy.' }),
-    el('div', { class: 'row', style: { marginTop: '14px' } },
-      el('button', { class: 'btn btn-ghost', text: 'Back', onclick: () => { s.step = 'instant'; renderPanel(); } }),
-      el('span', { class: 'grow' }),
-      el('button', { class: 'btn btn-primary', html: icon('check', 14) + ' Done', onclick: () => { sessions.delete(s.wsId); closeWizard(); bus.emit('chrome-updated'); } }))
-  );
-}
-
-function msgDetailBody(s, m) {
-  const det = inst_detail(s);
-  return el('div', {},
-    el('div', { class: 'msg-intro', text: det.text ? (det.text.slice(0, 600) + (det.text.length > 600 ? '\u2026' : '')) : (m.intro || '(empty body)') }),
-    det.links?.length ? el('div', { class: 'msg-links' },
-      det.links.slice(0, 6).map(u => el('button', {
-        class: 'btn btn-sm', style: { margin: '3px 4px 3px 0', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-        title: 'Open ' + u, text: '\u2192 ' + (u.replace(/^https?:\/\//, '').slice(0, 42)),
-        onclick: () => Tabs.createTab(s.wsId, { url: u, active: true })
-      }))) : null);
-}
-
-// the message detail is cached on the session; helper keeps render functions honest
-function inst_detail(s) { return s.instant.msgDetail || { text: '', links: [] }; }
-
-async function fetchInstantMessage(s, msgId) {
-  renderPanel();
-  try {
-    const det = await PH().temp.message(s.wsId, msgId);
-    if (s.instant.openMsg === msgId) {
-      s.instant.msgDetail = det.ok ? det : { text: det.error || 'could not load', links: [] };
-      renderPanel();
-    }
-  } catch (e) {
-    if (s.instant.openMsg === msgId) { s.instant.msgDetail = { text: String(e.message || e), links: [] }; renderPanel(); }
-  }
-}
-
-// inbox poll - driven by the wizard's existing 1.5s loop, gated to ~8s
-async function pollInbox(s, manual = false) {
-  const inst = s.instant;
-  const now = Date.now();
-  if (!manual && now - inst.lastPoll < 8000) return;
-  inst.lastPoll = now;
-  inst.busy = true;
-  try {
-    const res = await PH().temp.inbox(s.wsId);
-    inst.busy = false;
-    if (!res?.ok) { if (manual) toast({ title: 'Inbox check failed', sub: (res?.error || '').slice(0, 90), type: 'error', ic: 'warn' }); return; }
-    const known = new Set(inst.known);
-    const fresh = (res.messages || []).filter(m => !known.has(m.id));
-    inst.msgs = res.messages || [];
-    inst.known = (res.messages || []).map(m => m.id);
-    if (fresh.length) {
-      const first = fresh[0];
-      toast({ title: `Mail arrived: ${first.subject || '(no subject)'}`.slice(0, 70), sub: (first.from || '') + ' - click the wizard to read it', type: 'success', ic: 'mail', timeout: 6000 });
-    }
-    renderPanel();
-  } catch { inst.busy = false; }
-}
-
 // ---------------- existing-email path ----------------
 function stepExisting(s) {
   // Continue must unlock while the user types - the gate is recomputed live
@@ -804,8 +585,6 @@ function stepExisting(s) {
 async function wizardPoll() {
   const s = session();
   if (!s || qs('#wizardPanel').classList.contains('hidden')) return;
-  // instant-address inbox keeps polling while the panel is open
-  if (s.mode === 'instant' && s.step === 'inbox') { pollInbox(s).catch(() => { }); return; }
   if (s.step !== 'create') return;
   const wsId = s.wsId;
   const tab = Tabs.list(wsId).find(t => t.id === s.wizardTabId);
@@ -868,7 +647,7 @@ async function runFill(s, manual) {
   }
 }
 
-export function openWizardAt(wsId, step, mode = 'guided', providerId = 'proton') {
+export function openWizardAt(wsId, step, mode = 'guided', providerId = 'atomic') {
   openWizard(wsId);
   const s = session();
   if (s) {
@@ -907,34 +686,4 @@ export async function driveMockFlow(wsId, mockUrl, { hold = false, domain = 'moc
   const w = S.ws(wsId);
   console.log('[wizard-test] identity saved:', w?.identity?.email, '| workspace name:', w?.name);
   return { fill: s.fillReport, email: w?.identity?.email };
-}
-
-// ---- dev-only scripted instant-address flow (E2E) ----
-export async function driveInstantFlow(wsId, { local = 'tester777' } = {}) {
-  Tabs.switchWorkspace(wsId);
-  openWizard(wsId);
-  const s = session();
-  s.mode = 'instant';
-  s.draft.mode = 'custom';
-  s.draft.customLocal = local;
-  s.draft.pwMode = 'generate';
-  s.step = 'instant';
-  renderPanel();
-  await createInstant(s);
-  const w = S.ws(wsId);
-  const out = {
-    step: s.step,
-    error: s.instant.error || null,
-    address: s.instant.address,
-    disposable: w?.disposable ? { address: w.disposable.address, api: w.disposable.api } : null,
-    identity: w?.identity ? { email: w.identity.email, provider: w.identity.provider } : null
-  };
-  // let one inbox poll land (mock API answers instantly)
-  for (let i = 0; i < 20 && !(s.instant.msgs || []).length; i++) {
-    await new Promise(r => setTimeout(r, 400));
-    await pollInbox(s, true).catch(() => {});
-  }
-  out.msgs = (s.instant.msgs || []).map(m => ({ id: m.id, from: m.from, subject: m.subject }));
-  console.log('[wizard-test] instant:', JSON.stringify(out));
-  return out;
 }
