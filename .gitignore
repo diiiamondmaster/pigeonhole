@@ -5,6 +5,7 @@ node_modules/
 dist/
 out/
 build/tmp/
+.build-cache/
 
 # Runtime artifacts
 *.log
