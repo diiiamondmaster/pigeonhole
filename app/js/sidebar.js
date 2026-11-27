@@ -1,5 +1,8 @@
 // Workspace sidebar: numbered, color-coded tiles that wrap into new columns
-// and collapse to a slim rail.
+// and collapse to a slim rail. Drag tiles to reorder - numbers follow the
+// order automatically. Each tile carries a small bar on its right edge: full
+// for the active workspace, fading one step each time you switch away from a
+// previously used one (recency at a glance).
 import { el, qs, escapeHtml } from './util.js';
 import { icon } from './icons.js';
 import { showMenu } from './ctxmenu.js';
@@ -9,6 +12,11 @@ import * as Tabs from './tabs.js';
 import { openWizard } from './wizard.js';
 import { wsSettingsModal, confirmModal, openModal } from './modals.js';
 import { toast } from './toasts.js';
+
+// recency trail: most recently used first. The active workspace sits at the
+// head; the bar of the one you left fades one step per later switch.
+const recency = [];
+const FADE = [0.62, 0.44, 0.32, 0.22, 0.15, 0.09, 0.05];
 
 export function renderSidebar() {
   const tilesRoot = qs('#wsTiles');
@@ -21,20 +29,53 @@ export function renderSidebar() {
       title: '',
       style: { '--h': w.hue },
       'data-ws': w.id,
-      onclick: () => { if (S.getActiveWsId() !== w.id) Tabs.switchWorkspace(w.id); },
+      onclick: () => {
+        if (clickSuppressed) return;   // that pointer was a drag, not a click
+        if (S.getActiveWsId() !== w.id) Tabs.switchWorkspace(w.id);
+      },
       oncontextmenu: (e) => { e.preventDefault(); tileMenu(e, w); }
     },
       el('span', { text: w.num }),
-      // small status dot: this workspace exits through its own proxy
-      w.proxy && w.proxy.enabled ? el('span', { class: 'net-dot', title: `Routed via ${String(w.proxy.scheme).toUpperCase()} ${w.proxy.host}:${w.proxy.port}` }) : null
-    );
+      // recency bar (proxy state stays in the tooltip + top bar chip)
+      el('span', { class: 'ws-bar' }));
+    tile.addEventListener('pointerdown', onTilePointerDown);
     tile.addEventListener('mouseenter', () => showTip(tile, w));
     tile.addEventListener('mouseleave', hideTip);
     tilesRoot.append(tile);
   }
 
+  applyBars();
   requestAnimationFrame(fitColumns);
   applyCollapsed(S.snap()?.ui?.sidebarCollapsed);
+}
+
+// ---- recency bars ----
+function applyBars() {
+  const root = qs('#wsTiles');
+  if (!root) return;
+  const showBars = S.settings().wsAnim !== false;
+  const activeId = S.getActiveWsId();
+  for (const t of root.children) {
+    const bar = t.querySelector('.ws-bar');
+    if (!bar) continue;
+    if (!showBars) { bar.style.opacity = '0'; bar.classList.remove('on'); continue; }
+    const id = t.dataset.ws;
+    if (id === activeId) { bar.classList.add('on'); bar.style.opacity = '1'; bar.title = 'Current workspace'; continue; }
+    bar.classList.remove('on');
+    const rank = recency.indexOf(id);           // 0 = active itself
+    const step = rank <= 0 ? -1 : rank - 1;      // first switched-away tile = step 0
+    const fade = step >= 0 && step < FADE.length ? FADE[step] : 0;
+    bar.style.opacity = String(fade);
+    bar.title = fade > 0.05 ? `Used ${step + 1} switch${step ? 'es' : ''} ago` : '';
+  }
+}
+
+export function noteRecency(wsId) {
+  const i = recency.indexOf(wsId);
+  if (i !== -1) recency.splice(i, 1);
+  recency.unshift(wsId);
+  if (recency.length > 12) recency.length = 12;
+  applyBars();
 }
 
 // size the sidebar to EXACTLY what the tiles need: rightmost tile edge +
@@ -93,11 +134,123 @@ function hideTip() {
   if (tipEl) { tipEl.remove(); tipEl = null; }
 }
 
-// ---- tile context menu ----
+// ---- drag to reorder ----
+// Pointer-based so it works on the wrapping grid: a 6px threshold separates
+// click (switch) from drag (reorder); the dragged tile becomes a floating
+// ghost and the nearest tile to the pointer shows the drop target.
+let clickSuppressed = false;
+const drag = { tile: null, wsId: null, moved: false, sx: 0, sy: 0, ghost: null, hover: null, targetIdx: -1 };
+
+function onTilePointerDown(e) {
+  if (e.button !== 0) return;
+  const tile = e.currentTarget;
+  drag.tile = tile; drag.wsId = tile.dataset.ws;
+  drag.moved = false; drag.sx = e.clientX; drag.sy = e.clientY;
+  drag.ghost = null; drag.hover = null; drag.targetIdx = -1;
+  try { tile.setPointerCapture(e.pointerId); } catch { }
+  tile.addEventListener('pointermove', onTilePointerMove);
+  tile.addEventListener('pointerup', onTilePointerUp);
+  tile.addEventListener('pointercancel', onTilePointerUp);
+}
+
+function onTilePointerMove(e) {
+  if (!drag.tile) return;
+  const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+  if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+  if (!drag.moved) {
+    drag.moved = true;
+    hideTip();
+    drag.tile.classList.add('dragging');
+    const r = drag.tile.getBoundingClientRect();
+    drag.ghost = drag.tile.cloneNode(true);
+    drag.ghost.className = 'ws-tile ws-drag-ghost';
+    drag.ghost.style.width = r.width + 'px';
+    drag.ghost.style.height = r.height + 'px';
+    document.body.append(drag.ghost);
+  }
+  if (drag.ghost) {
+    drag.ghost.style.left = (e.clientX - 23) + 'px';
+    drag.ghost.style.top = (e.clientY - 23) + 'px';
+  }
+  // nearest tile to the pointer = drop target; before/after by quadrant
+  const tiles = [...qs('#wsTiles').children].filter(t => t !== drag.tile);
+  let best = null, bestD = Infinity, after = false;
+  for (const t of tiles) {
+    const r = t.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const d = Math.hypot(e.clientX - cx, e.clientY - cy);
+    if (d < bestD) { bestD = d; best = t; after = e.clientY > cy || (Math.abs(e.clientY - cy) < r.height / 2 && e.clientX > cx); }
+  }
+  if (drag.hover && drag.hover !== best) drag.hover.classList.remove('drop-hint');
+  drag.hover = best;
+  if (best) best.classList.add('drop-hint');
+  if (best) {
+    const all = [...qs('#wsTiles').children];
+    let idx = all.indexOf(best);
+    const from = all.indexOf(drag.tile);
+    if (after) idx += 1;
+    if (from < idx) idx -= 1;               // removal shifts the insertion point
+    drag.targetIdx = Math.max(0, Math.min(all.length - 1, idx));
+  }
+}
+
+async function onTilePointerUp(e) {
+  const tile = drag.tile;
+  if (!tile) return;
+  tile.removeEventListener('pointermove', onTilePointerMove);
+  tile.removeEventListener('pointerup', onTilePointerUp);
+  tile.removeEventListener('pointercancel', onTilePointerUp);
+  const wasMoved = drag.moved;
+  const targetIdx = drag.targetIdx;
+  drag.ghost?.remove();
+  drag.ghost = null;
+  drag.hover?.classList.remove('drop-hint');
+  drag.hover = null;
+  tile.classList.remove('dragging');
+  drag.tile = null;
+  if (wasMoved) {
+    clickSuppressed = true;                  // this pointer was a drag
+    setTimeout(() => { clickSuppressed = false; }, 120);
+    await reorderFromDrag(drag.wsId, targetIdx);
+  }
+}
+
+async function reorderFromDrag(wsId, targetIdx) {
+  if (!wsId || targetIdx < 0) return;
+  const ids = S.workspaces().map(w => w.id);
+  const from = ids.indexOf(wsId);
+  if (from === -1 || from === targetIdx) return;
+  ids.splice(from, 1);
+  ids.splice(targetIdx, 0, wsId);
+  await persistOrder(ids);
+}
+
+async function persistOrder(ids) {
+  try {
+    await PH().workspaces.reorder(ids);
+    await S.refresh();
+  } catch { toast({ title: 'Could not reorder', sub: 'The order was not saved - try again', type: 'error', ic: 'warn' }); }
+  renderSidebar();
+  bus.emit('chrome-updated');
+}
+
+async function moveWs(wsId, dir) {
+  const ids = S.workspaces().map(w => w.id);
+  const i = ids.indexOf(wsId);
+  const j = i + dir;
+  if (i === -1 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  await persistOrder(ids);
+}
 function tileMenu(e, w) {
+  const n = S.workspaces().length;
+  const i = S.workspaces().findIndex(x => x.id === w.id);
   showMenu(e.clientX, e.clientY, [
     { label: 'Open workspace', icon: 'arrowR', kbd: `Alt+${w.num <= 9 ? w.num : ''}`, action: () => Tabs.switchWorkspace(w.id) },
     { label: 'Set up email…', icon: 'mail', action: () => { Tabs.switchWorkspace(w.id); openWizard(w.id); } },
+    { sep: true },
+    { label: i > 0 ? 'Move up in the list' : 'Move up in the list', icon: 'chevL', disabled: i <= 0, action: () => moveWs(w.id, -1) },
+    { label: 'Move down in the list', icon: 'chevR', disabled: i >= n - 1, action: () => moveWs(w.id, 1) },
     { sep: true },
     { label: 'Workspace settings…', icon: 'gear', action: () => wsSettingsModal(w.id) },
     { label: (w.proxy && w.proxy.enabled) ? 'Proxy settings…' : 'Route through a proxy…', icon: 'globe', action: () => wsSettingsModal(w.id, { focusNetwork: true }) },
@@ -207,20 +360,19 @@ export function initSidebar() {
   qs('#expandBtn').addEventListener('click', toggleSidebar);
   bus.on('ws-updated', () => renderSidebar());
 
-  // fading switch trail (Opera GX style): the tile you leave keeps a short
-  // glow in its own hue while the new workspace takes over
-  let lastActive = null;
-  bus.on('ws-activated', ({ wsId, fromBoot }) => {
+  // recency: every activation becomes the head of the trail; the bars of
+  // tiles you switch away from fade one step per later switch. The active
+  // highlight moves with it (tiles are toggled in place - no re-render that
+  // could disturb an in-flight drag or focus)
+  bus.on('ws-activated', ({ wsId }) => {
     try {
-      const anim = S.settings().wsAnim !== false;
-      if (anim && !fromBoot && lastActive && lastActive !== wsId) {
-        const prev = qs(`#wsTiles .ws-tile[data-ws="${lastActive}"]`);
-        if (prev) {
-          prev.classList.add('trail');
-          setTimeout(() => prev.classList.remove('trail'), 1000);
-        }
+      noteRecency(wsId);
+      const root = qs('#wsTiles');
+      if (root) for (const t of root.children) {
+        const on = t.dataset.ws === wsId;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
       }
     } catch { }
-    lastActive = wsId;
   });
 }

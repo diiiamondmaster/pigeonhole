@@ -19,8 +19,9 @@ export function showMenu(x, y, items) {
   for (const it of items) {
     if (it.sep) { menu.append(el('div', { class: 'sep' })); continue; }
     menu.append(el('button', {
-      class: `mi ${it.danger ? 'danger' : ''}`,
-      onclick: () => { closeMenu(); it.action?.(); }
+      class: `mi ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''}`.trim(),
+      disabled: it.disabled ? '' : null,
+      onclick: () => { if (it.disabled) return; closeMenu(); it.action?.(); }
     },
       el('span', { html: icon(it.icon || '', 15) }),
       el('span', { text: it.label }),

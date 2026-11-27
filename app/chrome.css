@@ -121,26 +121,29 @@ img { -webkit-user-drag: none; }
   box-shadow: 0 0 0 2px hsl(var(--h) 60% 52% / 0.28), var(--shadow-soft);
 }
 
-/* proxy status dot on tiles */
-.ws-tile .net-dot {
-  position: absolute; top: 3px; right: 3px;
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 5px rgba(242, 177, 85, 0.9), 0 0 0 2px rgba(12, 14, 17, 0.9);
+/* switch recency bars: the active tile carries a full bar in its own hue;
+   tiles you switch away from fade one step per later switch */
+.ws-tile .ws-bar {
+  position: absolute; right: 3px; top: 20%; height: 60%; width: 3px;
+  border-radius: 2px;
+  background: hsl(var(--h) 72% 62%);
+  opacity: 0;
+  transition: opacity 0.45s ease, height 0.3s ease, top 0.3s ease;
   pointer-events: none;
 }
+.ws-tile .ws-bar.on {
+  width: 3.5px; top: 14%; height: 72%; opacity: 1;
+  box-shadow: 0 0 7px hsl(var(--h) 70% 55% / 0.75);
+}
 
-/* fading switch trail: the tile you leave glows in its hue, then fades */
-.ws-tile.trail { animation: wsTrail 0.95s ease-out forwards; }
-@keyframes wsTrail {
-  0% {
-    box-shadow: 0 0 0 2px hsl(var(--h) 60% 55% / 0.55), 0 0 22px 8px hsl(var(--h) 70% 60% / 0.55);
-    background: hsl(var(--h) 34% 30%);
-    border-color: hsl(var(--h) 55% 56%);
-  }
-  100% {
-    box-shadow: 0 0 0 0 hsl(var(--h) 60% 55% / 0), 0 0 0 0 hsl(var(--h) 70% 60% / 0);
-  }
+/* drag-to-reorder affordances */
+.ws-tile.dragging { opacity: 0.55; transform: scale(0.94); }
+.ws-tile.drop-hint { outline: 2px dashed var(--accent); outline-offset: 3px; }
+.ws-tile.ws-drag-ghost {
+  position: fixed; z-index: 900; pointer-events: none;
+  opacity: 0.9; transform: scale(1.04);
+  box-shadow: var(--shadow-pop);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
 }
 .ws-tile .tile-sub {
   position: absolute; bottom: 2px; right: 5px;
@@ -692,6 +695,8 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
   text-align: left;
 }
 .ctx-menu .mi:hover { background: var(--surface-3); color: var(--text); }
+.ctx-menu .mi.disabled { opacity: 0.38; cursor: default; }
+.ctx-menu .mi.disabled:hover { background: none; color: var(--text-dim); }
 .ctx-menu .mi.danger { color: var(--danger); }
 .ctx-menu .mi.danger:hover { background: var(--danger-dim); }
 .ctx-menu .mi .k { margin-left: auto; font-size: 11px; color: var(--text-faint); }
@@ -792,6 +797,29 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .checklist li.cur .ck { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .checklist li .ck-body { flex: 1; }
 .checklist li .ck-sub { font-size: 11px; color: var(--text-faint); margin-top: 2px; font-weight: 450; }
+
+/* ---- instant-address inbox (wizard, mail.tm) ---- */
+.msg-list { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.msg-item { border-bottom: 1px solid var(--border); background: var(--surface); }
+.msg-item:last-child { border-bottom: none; }
+.msg-row {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  transition: background 0.12s ease;
+}
+.msg-item:not(.seen) .msg-row { background: var(--accent-dim); }
+.msg-item:hover .msg-row { background: var(--surface-2); }
+.msg-item.open .msg-row { border-left: 2px solid var(--accent); }
+.msg-ico { color: var(--text-faint); flex: none; }
+.msg-item:not(.seen) .msg-ico { color: var(--accent); }
+.msg-subj { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.msg-item.seen .msg-subj { font-weight: 450; color: var(--text-dim); }
+.msg-meta { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
+.msg-intro {
+  padding: 10px 14px 12px; font-size: 11.5px; line-height: 1.55; color: var(--text-dim);
+  white-space: pre-wrap; word-break: break-word;
+  border-top: 1px dashed var(--border); background: var(--bg);
+}
+.msg-links { padding: 4px 14px 12px; border-top: 1px dashed var(--border); background: var(--bg); display: flex; flex-wrap: wrap; }
 
 .identity-card {
   background: linear-gradient(140deg, var(--surface-2), var(--surface));
