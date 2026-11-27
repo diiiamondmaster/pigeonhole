@@ -15,6 +15,7 @@
   "devDependencies": {
     "@electron/asar": "^4.3.4",
     "electron": "^38.8.6",
-    "playwright": "^1.65.1"
+    "playwright": "^1.65.1",
+    "resedit": "^3.1.1"
   }
 }

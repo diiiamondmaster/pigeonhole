@@ -249,6 +249,33 @@ async function main() {
     check('the tile you just left has a TALL bar (step 0)', bars.oneAgo.h > bars.current.h * 0.85 && bars.oneAgo.opacity > 0.8, JSON.stringify(bars.oneAgo));
     check('two switches away: the bar SHRANK further', bars.twoAgo.h < bars.oneAgo.h, `${bars.twoAgo.h.toFixed(1)}px < ${bars.oneAgo.h.toFixed(1)}px`);
     check('two switches away: the bar FADED further', bars.twoAgo.opacity < bars.oneAgo.opacity, `${bars.twoAgo.opacity} < ${bars.oneAgo.opacity}`);
+
+    // the trail ladder LENGTH follows the workspace count: with few
+    // workspaces the ladder compresses (the older bar drops proportionally
+    // more per step); with 8+ workspaces the same step keeps a taller bar
+    const countNow = await ev(async () => (await import('/js/state.js')).workspaces().length);
+    const stepsNow = Math.max(2, Math.min(7, countNow - 1));
+    const ratio = bars.twoAgo.h / bars.oneAgo.h;
+    // step-1 height = head + (tail-head)/steps -> ratio ~ 1 - 0.795/steps
+    check(`few workspaces compress the trail (ratio ${ratio.toFixed(2)} < ${(1 - 0.75 / stepsNow).toFixed(2)} for ${countNow} ws)`,
+      ratio < 1 - 0.75 / stepsNow, JSON.stringify({ countNow, stepsNow, ratio }));
+    const grown = await ev(async ([ids]) => {
+      const Tabs = await import('/js/tabs.js');
+      const S = await import('/js/state.js');
+      // bring the total to 8 workspaces
+      while (S.workspaces().length < 8) {
+        await window.pigeonhole.workspaces.create({});
+        await S.refresh();
+      }
+      // re-run the SAME 3-switch sequence so the measured tile sits at
+      // step 1 again, now on the full-length ladder
+      for (const id of ids) { Tabs.switchWorkspace(id); await new Promise(r => setTimeout(r, 330)); }
+      await new Promise(r => setTimeout(r, 500));
+      const t = document.querySelector(`#wsTiles .ws-tile[data-ws="${ids[0]}"]`);
+      const bar = t && t.querySelector('.ws-bar');
+      return { twoAgoH: bar.getBoundingClientRect().height, wsCount: S.workspaces().length };
+    }, [ids]);
+    check('more workspaces stretch the trail again', grown.twoAgoH > bars.twoAgo.h * 1.05, `step-1 with ${grown.wsCount} ws: ${grown.twoAgoH.toFixed(1)}px vs ${bars.twoAgo.h.toFixed(1)}px at ${countNow} ws`);
   }
 
   // ============ K6: HTML fullscreen takes the whole window ============

@@ -61,6 +61,14 @@ fs.rmSync(win, { recursive: true, force: true });
 fs.mkdirSync(win, { recursive: true });
 execFileSync('unzip', ['-q', electronZip, '-d', win], { stdio: 'inherit' });
 fs.renameSync(path.join(win, 'electron.exe'), path.join(win, 'Pigeonhole.exe'));
+// the exe keeps Electron's own icon unless we replace the PE resources:
+// patch in the amber pigeonhole mark + a proper version stamp
+execFileSync(process.execPath, [
+  path.join(ROOT, 'scripts', 'patch-exe-icon.mjs'),
+  path.join(win, 'Pigeonhole.exe'),
+  path.join(ROOT, 'build', 'icon.ico'),
+  version
+], { stdio: 'inherit', cwd: ROOT });
 fs.rmSync(path.join(win, 'resources', 'default_app.asar'), { force: true });
 fs.renameSync(path.join(win, 'LICENSE'), path.join(win, 'LICENSE.electron.txt'));   // match shipped layout
 fs.rmSync(path.join(win, 'version'), { force: true });

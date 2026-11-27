@@ -53,15 +53,23 @@ export function renderSidebar() {
 // Opera-GX-style trail: the workspace you used last carries a tall bar on
 // its tile; every workspace you switch through after leaving it makes that
 // bar one step SHORTER and more transparent, until it disappears.
-const TRAIL = [
-  { h: 88, o: 0.92 },   // step 0: the tile you just left
-  { h: 72, o: 0.72 },
-  { h: 58, o: 0.55 },
-  { h: 46, o: 0.42 },
-  { h: 36, o: 0.30 },
-  { h: 26, o: 0.20 },
-  { h: 18, o: 0.12 }
-];
+// The ladder's LENGTH follows the workspace count: with few workspaces you
+// cannot be many switches away anyway, so the trail compresses (2 steps
+// minimum) and the older bars fade out sooner; from 8 workspaces up it
+// spans the full 7 steps.
+const TRAIL_HEAD = { h: 88, o: 0.92 };   // step 0: the tile you just left
+const TRAIL_TAIL = { h: 18, o: 0.12 };   // the last visible step
+const TRAIL_MAX_STEPS = 7;
+function trailLevel(step, steps) {
+  const f = step / steps;
+  return {
+    h: Math.round(TRAIL_HEAD.h + (TRAIL_TAIL.h - TRAIL_HEAD.h) * f),
+    o: TRAIL_HEAD.o + (TRAIL_TAIL.o - TRAIL_HEAD.o) * f
+  };
+}
+function trailSteps() {
+  return Math.max(2, Math.min(TRAIL_MAX_STEPS, S.workspaces().length - 1));
+}
 function applyBars() {
   const root = qs('#wsTiles');
   if (!root) return;
@@ -81,7 +89,8 @@ function applyBars() {
     bar.classList.remove('on');
     const rank = recency.indexOf(id);           // 0 = active itself
     const step = rank <= 0 ? -1 : rank - 1;      // first switched-away tile = step 0
-    const lv = step >= 0 && step < TRAIL.length ? TRAIL[step] : null;
+    const steps = trailSteps();
+    const lv = step >= 0 && step <= steps ? trailLevel(step, steps) : null;
     if (lv) {
       bar.style.opacity = String(lv.o);
       bar.style.height = lv.h + '%';
