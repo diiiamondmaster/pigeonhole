@@ -213,6 +213,12 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (!WS_ID.test(wsId || '')) throw bad('bad id');
     return pool.heal(wsId);
   });
+  // real-page feedback: the renderer reports load outcomes per workspace so
+  // the supervisor scores exits on actual browsing, not just probes
+  ipcMain.handle('ph:pool-note-page', (_e, wsId, ok) => {
+    if (!WS_ID.test(wsId || '')) return false;
+    return pool.notePage(wsId, !!ok);
+  });
   ipcMain.handle('ph:pool-bulk', () => pool.bulk());
 
   // proxy mode switch: 'direct' | 'auto' | 'custom' (custom is applied by the

@@ -131,14 +131,19 @@ export async function settingsModal(activeTab = 'general') {
 
     network: () => el('div', {},
       section('Free proxy pool',
-        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'The pool turns workspaces into routed exits without you owning a proxy: Pigeonhole fetches public community proxy lists, verifies each candidate by routing a request through it, and hands the fastest verified exits to workspaces - one per workspace, rotated automatically when one dies.' })),
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.6', marginBottom: '12px' }, text: 'The pool turns workspaces into routed exits without you owning a proxy: Pigeonhole fetches public community proxy lists, verifies each candidate with a real content fetch (not just a ping), and hands the best exits to workspaces - one per workspace, ranked by measured latency, reliability and distance from you. A supervisor keeps watching every assigned exit and swaps dead or degraded ones in the background, without reloading your pages.' })),
       ...(() => {
         const stat = el('div', { class: 'hint', style: { minHeight: '16px', marginBottom: '10px' }, text: '…' });
         const renderStat = async () => {
           try {
             const s = await PH().pool.status();
             const age = s.ageSec == null ? 'never' : (s.ageSec > 90 ? Math.round(s.ageSec / 60) + ' min ago' : 'fresh');
-            stat.textContent = `${s.verified} verified exits (of ${s.candidates} candidates checked) · fetched ${age}` +
+            const mon = s.supervision || {};
+            const monTxt = mon.sweeps > 0
+              ? `monitoring every ${Math.max(1, Math.round((mon.everyMs || 45000) / 1000))}s · ${mon.rotations} auto-swap${mon.rotations === 1 ? '' : 's'} this session`
+              : 'monitoring warming up…';
+            stat.textContent = `${s.usable != null ? s.usable + ' ready' : s.verified} of ${s.verified} verified exits · fetched ${age} · ${monTxt}` +
+              (s.userCountry ? ` · you: ${s.userCountry}` : '') +
               (s.phase && s.phase !== 'idle' ? ' · checking now…' : '');
           } catch { stat.textContent = ''; }
         };
@@ -150,7 +155,7 @@ export async function settingsModal(activeTab = 'general') {
             refreshBtn.disabled = true;
             try {
               const s = await PH().pool.refresh();
-              stat.textContent = `${s.verified} verified exits (of ${s.candidates} candidates checked) · fetched fresh`;
+              stat.textContent = `${s.verified} verified exits · fetched fresh`;
               toast({ title: 'Free pool refreshed', sub: `${s.verified} verified exits available`, type: 'success', ic: 'check' });
             } catch (e) { stat.textContent = 'Refresh failed - ' + String(e.message || e).slice(0, 80); }
             refreshBtn.disabled = false;
@@ -176,11 +181,11 @@ export async function settingsModal(activeTab = 'general') {
           toggleRow('New workspaces get an automatic exit',
             'Every workspace you create routes through the free pool right away. You can always switch one back to Direct or Custom in its settings.',
             st.poolAutoNewWorkspaces !== false, async (v) => { await PH().settings.set({ poolAutoNewWorkspaces: v }); await S.refresh(); }),
-          el('div', { class: 'hint', style: { marginTop: '6px' }, text: 'Honest bit: community exits are run by volunteers. HTTPS traffic stays end-to-end encrypted, but the operator can see plain-HTTP requests and the exit IP is theirs. The pool also self-heals - a dead exit is replaced automatically.' })
+          el('div', { class: 'hint', style: { marginTop: '6px' }, text: 'Honest bit: community exits are run by volunteers. HTTPS traffic stays end-to-end encrypted, but the operator can see plain-HTTP requests and the exit IP is theirs. The supervisor self-heals - a dead or degraded exit is replaced in the background, and your pages keep working through the swap.' })
         ];
       })(),
       section('What this costs',
-        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'Nothing, and no accounts: the lists come from public aggregators (monosans, Geonode, ProxyScrape, TheSpeedX) refreshed every ~10-30 minutes, and the app re-verifies everything itself before handing an exit to a workspace. Speed varies - community proxies range from fast to slow; the pool always prefers the fastest verified ones, and the Test exit IP button in each workspace proves what you got.' }))),
+        el('p', { style: { fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.65' }, text: 'Nothing, and no accounts: the lists come from public aggregators (monosans, Geonode, ProxyScrape, TheSpeedX, Proxifly) refreshed every ~10-30 minutes, and the app re-verifies everything itself before handing an exit to a workspace - including a real-page check that filters out proxies that can answer a ping but not carry actual traffic. Exits near you are preferred when they are fast; the Test exit IP button in each workspace proves what you got.' }))),
 
     onboarding: () => el('div', {},
       section('Wizard behaviour',
@@ -331,18 +336,26 @@ export async function wsSettingsModal(wsId, opts = {}) {
     try {
       const s = await PH().pool.status();
       const age = s.ageSec == null ? 'never' : (s.ageSec > 90 ? Math.round(s.ageSec / 60) + ' min ago' : 'fresh');
-      poolStat.textContent = `Free pool: ${s.verified} verified exits (of ${s.candidates} checked) · ${age}` +
+      const mon = s.supervision || {};
+      const monTxt = mon.sweeps > 0
+        ? `monitoring every ${Math.max(1, Math.round((mon.everyMs || 45000) / 1000))}s · ${mon.rotations} auto-swap${mon.rotations === 1 ? '' : 's'} this session`
+        : 'monitoring warming up…';
+      poolStat.textContent = `Free pool: ${s.usable != null ? s.usable + ' ready' : s.verified} of ${s.verified} verified exits · ${age} · ${monTxt}` +
         (s.phase && s.phase !== 'idle' ? ' · checking…' : '');
     } catch { poolStat.textContent = ''; }
   };
   const loadRegions = async () => {
     try {
+      const s = await PH().pool.status();
       const regs = await PH().pool.regions();
       regionSel.replaceChildren(
-        el('option', { value: 'any', text: 'Any region' }),
+        el('option', { value: 'any', text: 'Smart pick (fastest + nearby)' }),
+        el('option', { value: 'near', text: 'Nearby region only' }),
         ...regs.filter(r => r.country && r.country !== '??').slice(0, 30).map(r =>
           el('option', { value: r.country, text: `${r.country} (${r.count})` })));
-      regionSel.value = p.prefRegion || 'any';
+      const pref = p.prefRegion || 'any';
+      regionSel.value = ['any', 'near'].includes(pref) || regs.some(r => r.country === pref) ? pref : 'any';
+      regionSel.title = s.userCountry ? `You appear to be in ${s.userCountry} - Smart pick prefers exits near it.` : 'Smart pick ranks exits by speed and distance from you.';
     } catch { }
   };
   const goAuto = async (region) => {
@@ -380,7 +393,7 @@ export async function wsSettingsModal(wsId, opts = {}) {
     el('div', { class: 'row', style: { marginBottom: '6px', flexWrap: 'wrap', gap: '8px', alignItems: 'center' } },
       el('span', { class: 'hint', style: { margin: '0' }, text: 'Prefer a region:' }), regionSel),
     poolStat,
-    el('div', { class: 'hint', style: { marginTop: '6px' }, text: 'Pigeonhole picks a verified community proxy, keeps it healthy and swaps it automatically if it dies - no accounts needed, nothing to type. Community exits are run by volunteers: HTTPS stays end-to-end encrypted, but the operator sees plain-HTTP traffic and the exit IP.' }));
+    el('div', { class: 'hint', style: { marginTop: '6px' }, text: 'Pigeonhole picks a verified community proxy, watches it continuously (latency, reliability and your own page loads feed its score) and swaps it in the background when it dies or a clearly better one shows up - pages never reload mid-swap. Community exits are run by volunteers: HTTPS stays end-to-end encrypted, but the operator sees plain-HTTP traffic and the exit IP.' }));
 
   // ---- custom panel (the classic fields) ----
   const schemeSeg = el('div', { class: 'seg span2' }, [['socks5', 'SOCKS5'], ['http', 'HTTP']].map(([k, l]) =>

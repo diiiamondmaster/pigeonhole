@@ -135,9 +135,21 @@ function buildWebview(wsId, tab) {
   });
   wv.addEventListener('did-start-loading', () => { tab.loading = true; render(wsId); if (isActiveTab(wsId, tab)) bus.emit('active-tab-updated', { wsId, tab }); });
   wv.addEventListener('did-stop-loading', () => { tab.loading = false; render(wsId); if (isActiveTab(wsId, tab)) bus.emit('active-tab-updated', { wsId, tab }); });
+  wv.addEventListener('did-finish-load', () => {
+    // real-traffic feedback: successful page loads keep the workspace exit's
+    // quality score healthy (the pool supervisor blends this with its probes)
+    try {
+      const u = wv.getURL() || '';
+      if (/^pigeonhole:/i.test(u)) return;   // error/newtab pages are not signal
+      PH().pool.notePage(wsId, true).catch(() => { });
+    } catch { }
+  });
   wv.addEventListener('did-fail-load', (e) => {
     if (!e.isMainFrame) return;
     if (e.errorCode === -3) return; // aborted
+    // real-traffic feedback: a failed load decays the exit's score; the
+    // supervisor picks this up within a sweep and pre-empts the next failure
+    PH().pool.notePage(wsId, false).catch(() => { });
     const showErrorPage = () => {
       const target = e.validatedURL || tab.url || safeUrl(wv);
       tab.lastError = { code: e.errorCode, desc: e.errorDescription };

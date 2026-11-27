@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     regions: () => invoke('ph:pool-regions'),
     rotate: (wsId) => invoke('ph:pool-rotate', wsId),
     heal: (wsId) => invoke('ph:pool-heal', wsId),
+    notePage: (wsId, ok) => invoke('ph:pool-note-page', wsId, !!ok),
     bulk: () => invoke('ph:pool-bulk')
   },
   tabs: { save: (wsId, tabs) => invoke('ph:tabs-save', wsId, tabs) },

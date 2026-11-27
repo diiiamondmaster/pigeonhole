@@ -187,10 +187,33 @@ function handleEvent({ type, payload }) {
   } else if (type === 'download') {
     downloadToast(payload);
   } else if (type === 'proxy-applied') {
-    // the workspace's route just changed live: reload its pages so they
-    // pick the new path up, and refresh the network chips
-    if (payload.wsId && payload.wsId === S.getActiveWsId()) Tabs.reload(payload.wsId);
+    // the workspace's route just changed live. Visible rotations (user
+    // action, heal-and-retry) reload the workspace's pages so they pick the
+    // new path up; supervisor swaps set reload:false - the new route covers
+    // new requests while already-rendered pages keep working, so nothing
+    // reloads under the user's cursor.
+    if (payload.wsId && payload.wsId === S.getActiveWsId() && payload.reload !== false) Tabs.reload(payload.wsId);
     S.refresh().then(() => { renderTopbar(); renderStatusbar(); });
+  } else if (type === 'pool-rotation') {
+    // the supervisor swapped this workspace's exit on its own
+    S.refresh().then(() => { renderTopbar(); renderStatusbar(); });
+    if (payload.wsId && payload.wsId === S.getActiveWsId()) {
+      const old = payload.old || {};
+      const neu = payload.proxy || {};
+      if (payload.reason === 'dead') {
+        toast({
+          title: 'Exit replaced automatically',
+          sub: `${old.host || 'the old exit'}:${old.port || ''} stopped responding - traffic now leaves via ${neu.host}:${neu.port}${neu.country ? ' (' + neu.country + ')' : ''}. Pages kept working.`,
+          type: 'info', ic: 'globe', timeout: 6000
+        });
+      } else if (payload.reason === 'upgrade') {
+        toast({
+          title: 'Exit upgraded',
+          sub: `Swapped ${old.host || 'the old exit'}:${old.port || ''} for a better verified exit (${neu.host}:${neu.port}${neu.country ? ', ' + neu.country : ''}${neu.latencyMs ? ', ' + neu.latencyMs + ' ms' : ''}). Pages kept working.`,
+          type: 'success', ic: 'globe', timeout: 6000
+        });
+      }
+    }
   } else if (type === 'state-changed') {
     S.refresh().then(() => { applyUiPrefs(); renderSidebar(); renderTopbar(); });
   } else if (type === 'pool-migrated') {
