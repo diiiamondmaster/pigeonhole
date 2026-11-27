@@ -73,7 +73,12 @@ async function boot() {
 function applyUiPrefs() {
   const st = S.settings();
   // whole-chrome zoom: compact 90% / large 110%
-  document.body.style.zoom = ({ compact: '0.9', large: '1.1' })[st.uiScale] || '';
+  const factor = ({ compact: 0.9, large: 1.1 })[st.uiScale] || 1;
+  document.body.style.zoom = factor !== 1 ? String(factor) : '';
+  // 100vh does NOT shrink with body zoom: an #app at 100vh under zoom 0.9
+  // left an empty strip under the statusbar (and 1.1 clipped it off-screen).
+  // Compensate the height so the statusbar always lands on the window edge.
+  qs('#app').style.height = factor !== 1 ? (100 / factor) + 'vh' : '';
   // sidebar workspace tiles
   const tile = ({ small: '40px', large: '54px' })[st.tileSize] || '46px';
   document.documentElement.style.setProperty('--tile', tile);
@@ -214,6 +219,24 @@ function handleEvent({ type, payload }) {
         });
       }
     }
+  } else if (type === 'backup-captured') {
+    // a mail backup download was diverted into the workspace's backup store
+    S.refresh().then(() => { renderSidebar(); renderStatusbar(); });
+    const kb = payload.bytes >= 1048576 ? (payload.bytes / 1048576).toFixed(1) + ' MB' : Math.round((payload.bytes || 0) / 1024) + ' KB';
+    toast({
+      title: 'Mail backup saved to the workspace',
+      sub: `${payload.name} (${kb})${payload.provider ? ' - ' + payload.provider : ''} - kept out of the Downloads folder, in Workspace settings \u2192 Mail backup files.`,
+      type: 'success', ic: 'check', timeout: 6500
+    });
+  } else if (type === 'backup-legacy') {
+    S.refresh().then(() => { renderSidebar(); renderStatusbar(); });
+  } else if (type === 'backups-scanned') {
+    S.refresh().then(() => { renderSidebar(); renderStatusbar(); });
+    toast({
+      title: `Imported ${payload.imported || 0} backup file${(payload.imported || 0) === 1 ? '' : 's'} from Downloads`,
+      sub: 'Matched to their workspaces by mailbox address; unrelated files were left untouched. See each workspace\u2019s settings \u2192 Mail backup files.',
+      type: payload.imported ? 'success' : 'info', ic: 'check', timeout: 6500
+    });
   } else if (type === 'state-changed') {
     S.refresh().then(() => { applyUiPrefs(); renderSidebar(); renderTopbar(); });
   } else if (type === 'pool-migrated') {

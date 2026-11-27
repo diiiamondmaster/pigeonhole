@@ -312,7 +312,34 @@ function loadWebview(wv, tab) {
 
 export function goBack(wsId) { try { webviewOf(wsId)?.goBack(); } catch { } }
 export function goForward(wsId) { try { webviewOf(wsId)?.goForward(); } catch { } }
-export function reload(wsId) { try { webviewOf(wsId)?.reload(); } catch { } }
+
+// Reload the ACTIVE tab. When a failed load parked the tab on the internal
+// error page, a plain reload() would reload the error page itself - exactly
+// the "reload button does nothing" complaint. Parse the failed URL back out
+// and navigate to THAT instead.
+export function reload(wsId) {
+  const t = currentTab(wsId);
+  const wv = webviewOf(wsId, t);
+  if (!wv || !t) return;
+  let cur = '';
+  try { cur = wv.getURL() || ''; } catch { }
+  if (/^pigeonhole:\/\/error\//i.test(cur)) {
+    let target = '';
+    const m = /[?&]url=([^&]*)/.exec(cur);
+    if (m) { try { target = decodeURIComponent(m[1]); } catch { } }
+    if (target && /^https?:\/\//i.test(target)) {
+      t.lastError = null;
+      t.url = target;
+      loadWebview(wv, t);
+      render(wsId);
+      return;
+    }
+  }
+  try { wv.reload(); } catch {
+    // the webview is not interactive yet (still attaching): re-apply src
+    try { wv.setAttribute('src', t.url || NTP(wsId)); } catch { }
+  }
+}
 export function canGoBack(wsId) { try { return !!webviewOf(wsId)?.canGoBack(); } catch { return false; } }
 export function canGoForward(wsId) { try { return !!webviewOf(wsId)?.canGoForward(); } catch { return false; } }
 

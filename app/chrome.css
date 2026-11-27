@@ -121,8 +121,10 @@ img { -webkit-user-drag: none; }
   box-shadow: 0 0 0 2px hsl(var(--h) 60% 52% / 0.28), var(--shadow-soft);
 }
 
-/* switch recency bars: the active tile carries a full bar in its own hue;
-   tiles you switch away from fade one step per later switch */
+/* switch recency trails (Opera-GX style): a bar on the right edge of the
+   tile you used last, in its own hue. The bar SHRINKS and fades one step
+   for every workspace switched through after leaving it (geometry is set
+   from JS; this rule carries only the resting look) */
 .ws-tile .ws-bar {
   position: absolute; right: 3px; top: 20%; height: 60%; width: 3px;
   border-radius: 2px;
@@ -132,7 +134,7 @@ img { -webkit-user-drag: none; }
   pointer-events: none;
 }
 .ws-tile .ws-bar.on {
-  width: 3.5px; top: 14%; height: 72%; opacity: 1;
+  width: 3.5px;
   box-shadow: 0 0 7px hsl(var(--h) 70% 55% / 0.75);
 }
 
@@ -482,6 +484,18 @@ img { -webkit-user-drag: none; }
   font-size: 12.5px;
 }
 .find-count { font-size: 11.5px; color: var(--text-faint); min-width: 52px; text-align: center; }
+
+/* ================= page fullscreen (video etc.) ================= */
+#app.page-fs .sidebar,
+#app.page-fs .sb-rail,
+#app.page-fs .topbar,
+#app.page-fs .tabstrip,
+#app.page-fs .toolbar,
+#app.page-fs .offer-bar,
+#app.page-fs .find-bar,
+#app.page-fs .statusbar,
+#app.page-fs .dock-panel { display: none !important; }
+#app.page-fs .ws-view.active { padding-right: 0; }
 
 /* ================= content & webviews ================= */
 .content { flex: 1; position: relative; min-height: 0; background: var(--bg); }

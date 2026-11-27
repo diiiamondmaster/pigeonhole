@@ -1,8 +1,8 @@
 // Workspace sidebar: numbered, color-coded tiles that wrap into new columns
 // and collapse to a slim rail. Drag tiles to reorder - numbers follow the
 // order automatically. Each tile carries a small bar on its right edge: full
-// for the active workspace, fading one step each time you switch away from a
-// previously used one (recency at a glance).
+// for the active workspace, and for the others a trail that shrinks and
+// fades one step for every workspace switched through after leaving it.
 import { el, qs, escapeHtml } from './util.js';
 import { icon } from './icons.js';
 import { showMenu } from './ctxmenu.js';
@@ -14,9 +14,9 @@ import { wsSettingsModal, confirmModal, openModal } from './modals.js';
 import { toast } from './toasts.js';
 
 // recency trail: most recently used first. The active workspace sits at the
-// head; the bar of the one you left fades one step per later switch.
+// head; the bar of the one you left shrinks and fades one step per later
+// switch.
 const recency = [];
-const FADE = [0.62, 0.44, 0.32, 0.22, 0.15, 0.09, 0.05];
 
 export function renderSidebar() {
   const tilesRoot = qs('#wsTiles');
@@ -50,6 +50,18 @@ export function renderSidebar() {
 }
 
 // ---- recency bars ----
+// Opera-GX-style trail: the workspace you used last carries a tall bar on
+// its tile; every workspace you switch through after leaving it makes that
+// bar one step SHORTER and more transparent, until it disappears.
+const TRAIL = [
+  { h: 88, o: 0.92 },   // step 0: the tile you just left
+  { h: 72, o: 0.72 },
+  { h: 58, o: 0.55 },
+  { h: 46, o: 0.42 },
+  { h: 36, o: 0.30 },
+  { h: 26, o: 0.20 },
+  { h: 18, o: 0.12 }
+];
 function applyBars() {
   const root = qs('#wsTiles');
   if (!root) return;
@@ -60,13 +72,25 @@ function applyBars() {
     if (!bar) continue;
     if (!showBars) { bar.style.opacity = '0'; bar.classList.remove('on'); continue; }
     const id = t.dataset.ws;
-    if (id === activeId) { bar.classList.add('on'); bar.style.opacity = '1'; bar.title = 'Current workspace'; continue; }
+    if (id === activeId) {
+      bar.classList.add('on');
+      bar.style.opacity = '1'; bar.style.height = '72%'; bar.style.top = '14%';
+      bar.title = 'Current workspace';
+      continue;
+    }
     bar.classList.remove('on');
     const rank = recency.indexOf(id);           // 0 = active itself
     const step = rank <= 0 ? -1 : rank - 1;      // first switched-away tile = step 0
-    const fade = step >= 0 && step < FADE.length ? FADE[step] : 0;
-    bar.style.opacity = String(fade);
-    bar.title = fade > 0.05 ? `Used ${step + 1} switch${step ? 'es' : ''} ago` : '';
+    const lv = step >= 0 && step < TRAIL.length ? TRAIL[step] : null;
+    if (lv) {
+      bar.style.opacity = String(lv.o);
+      bar.style.height = lv.h + '%';
+      bar.style.top = ((100 - lv.h) / 2).toFixed(1) + '%';
+      bar.title = `Used ${step + 1} switch${step === 0 ? '' : 'es'} ago`;
+    } else {
+      bar.style.opacity = '0';
+      bar.title = '';
+    }
   }
 }
 
@@ -364,6 +388,10 @@ export function initSidebar() {
   // tiles you switch away from fade one step per later switch. The active
   // highlight moves with it (tiles are toggled in place - no re-render that
   // could disturb an in-flight drag or focus)
+  // seed the trail with the workspace the boot restored as active, so the
+  // first manual switch already paints a correct "last used" bar
+  const bootActive = S.getActiveWsId();
+  if (bootActive) noteRecency(bootActive);
   bus.on('ws-activated', ({ wsId }) => {
     try {
       noteRecency(wsId);
