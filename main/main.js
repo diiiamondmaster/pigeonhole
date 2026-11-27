@@ -111,6 +111,7 @@ function mapShortcut(input) {
   if (c && !a && k === 'w') return { action: 'close-tab' };
   if (c && !a && k === 'l') return { action: 'focus-address' };
   if (c && !a && k === 'r') return { action: 'reload' };
+  if (!c && !a && k === 'f11') return { action: 'fullscreen' };
   if (!c && !a && k === 'f5') return { action: 'reload' };
   if (c && !a && k === 'f') return { action: 'find' };
   if (c && a && k === 'i') return { action: 'devtools-guest' };

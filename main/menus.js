@@ -65,7 +65,7 @@ function buildAppMenu(getWindow) {
         { type: 'separator' },
         S('Toggle &Sidebar', 'toggle-sidebar', 'CmdOrCtrl+B'),
         S('&Extensions panel', 'ext-panel', 'CmdOrCtrl+Shift+E'),
-        { role: 'togglefullscreen' },
+        S('&Fullscreen', 'fullscreen', 'F11'),
         { type: 'separator' },
         { role: 'toggleDevTools' }
       ]

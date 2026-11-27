@@ -247,6 +247,7 @@ export function runAction(action, extra = {}) {
     case 'forward': Tabs.goForward(wsId); break;
     case 'home': Tabs.navigate(wsId, `pigeonhole://newtab?ws=${wsId}`); break;
     case 'find': toggleFind(); break;
+    case 'fullscreen': PH().app.fullscreen().catch(() => { }); break;
     case 'next-tab': cycleTab(1); break;
     case 'prev-tab': cycleTab(-1); break;
     case 'new-workspace': newWorkspace(); break;
@@ -298,6 +299,7 @@ function onChromeKey(e) {
   else if (a && !c && k === 'home') { e.preventDefault(); runAction('home'); }
   else if (a && !c && /^[0-9]$/.test(k)) { e.preventDefault(); runAction('ws-switch', { n: k === '0' ? 10 : Number(k) }); }
   else if (!c && !a && k === 'f5' && !inField) { e.preventDefault(); runAction('reload'); }
+  else if (!c && !a && k === 'f11') { e.preventDefault(); runAction('fullscreen'); }
 }
 
 // top bar buttons
@@ -305,8 +307,10 @@ qs('#vaultBtn').innerHTML = icon('key', 17);
 qs('#settingsBtn').innerHTML = icon('gear', 17);
 qs('#shieldBtn').innerHTML = icon('shield', 17) + '<span class="count-badge hidden"></span>';
 qs('#extBtn').innerHTML = icon('puzzle', 17);
+qs('#fsBtn').innerHTML = icon('expand', 16);
 qs('#vaultBtn').addEventListener('click', () => runAction('vault'));
 qs('#settingsBtn').addEventListener('click', () => settingsModal());
+qs('#fsBtn').addEventListener('click', () => runAction('fullscreen'));
 qs('#logoBtn')?.addEventListener('click', () => settingsModal('about'));
 // the ads status item opens the shield menu
 qs('#statusLeft').addEventListener('click', (e) => {
