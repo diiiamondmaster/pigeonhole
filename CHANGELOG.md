@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.1.0-beta.5 - 2026-11-27 (beta channel)
+
+Email that just works, workspaces that stay tidy, and Google that stops
+getting in the way. The headline: you no longer have to fight any provider's
+signup form - the wizard can create a real mailbox for you, automatically.
+
+- **Instant addresses (mail.tm / mail.gw).** A new first choice in the email
+  wizard: *Get an instant address (automatic)*. One API call creates a real
+  working mailbox - no CAPTCHA, no forms, no phone, no personal data - and
+  saves it as the workspace identity. The wizard then shows a **live inbox**:
+  verification mails appear as they arrive, each one expands to its text and
+  links, and links open in the workspace with one click. A new mail pops a
+  toast. The API traffic goes out on Pigeonhole's own connection - never
+  through the workspace proxy - so the mailbox keeps working exactly when
+  proxied browsing is having a bad day. Powered by the free mail.tm service
+  (mail.gw fallback), with attribution shown in the wizard and the docs.
+- **Email providers re-researched and fixed (November 2026).** mail.com and
+  GMX are out: both gate signup behind a phone number, and both are hostile
+  to shared/proxy IPs. **Atomic Mail** is in: nothing personal at signup
+  (name, address, password), seed-phrase recovery, unlimited free storage.
+  Tuta is demoted with an honest warning - VPN/proxy signups sit in a 48h+
+  approval queue and unused free accounts get deleted - and Mailfence carries
+  the shared-IP warning. Proton stays the recommended real provider. All
+  provider links re-verified.
+- **Workspace numbering that heals itself.** Deleting a workspace renumbers
+  the rest (1..N) immediately - no more "Workspace 7" when there are three.
+  Creating after a delete continues from N+1.
+- **Drag to reorder workspaces.** Grab any tile and drop it where you want
+  it - numbers update automatically, as do Alt+N shortcuts and the sidebar
+  order. Right-click a tile for *Move up / Move down* if dragging is not
+  your thing.
+- **New switch tracker.** The old glow-trail and status dots are gone. Every
+  tile now carries a small bar on its right edge: full and bright on the
+  active workspace (its own hue), fading one step for every workspace you
+  switch through after leaving it - recency at a glance, quiet by design.
+  Toggle in Settings -> Appearance (*Recency switch bars*).
+- **Fullscreen, properly reachable.** F11 works everywhere now - chrome
+  focused or page focused - plus a fullscreen button on the top bar and the
+  classic View-menu entry. One keystroke, one click, same action.
+- **Google stops shouting at shared exits (best effort).** A new built-in
+  *Google Consent Helper* extension auto-dismisses the "Before you continue"
+  cookie wall on Google and YouTube pages (clicking *Reject all* - the search
+  results work either way). When Google serves the "unusual traffic" wall
+  anyway, a pool-routed workspace rotates its exit and retries once,
+  automatically, and tells you what it did; non-pool routes get the honest
+  explanation with a pointer to the rotate control. No wall-dodging magic is
+  claimed - this is the ergonomic version of what you would do by hand.
+
 ## 1.1.0-beta.4 - 2026-11-27 (beta channel)
 
 The proxy pool grows up: exits are now chosen for real-world quality, watched

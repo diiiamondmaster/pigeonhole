@@ -41,13 +41,18 @@ adds on top:
   each switched on or off individually - from the puzzle button in the top
   bar or Settings → Extensions: a spell checker with right-click corrections,
   a tracker/ad-beacon shield, **Video Speed** (a Video Speed Controller for
-  any video: S/D/R/V keys, per-site remembered speeds), and **Ad Shield**
+  any video: S/D/R/V keys, per-site remembered speeds), **Ad Shield**
   (ad blocking with Basic/Standard/Strict levels, per-site pause, and a
-  visible blocked count).
-- **Appearance settings (beta line).** Interface scale, workspace tile size
-  and the workspace-switch animation (a fading Opera-GX-style trail) are
-  adjustable in Settings → Appearance; the active workspace is called out
-  with a hue line under the top bar.
+  visible blocked count), and **Google Consent Helper** (auto-dismisses the
+  "Before you continue" cookie wall on Google and YouTube pages).
+- **Appearance settings (beta line).** Interface scale and workspace tile
+  size are adjustable in Settings → Appearance; the active workspace is
+  called out with a hue line under the top bar, and each tile carries a
+  recency bar that fades the further back in your switching history it is.
+- **Instant email addresses (beta line).** The wizard's first option: a real,
+  working mailbox over the free mail.tm service, created with one API call -
+  no CAPTCHA, no forms, nothing personal - with a live inbox right in the
+  wizard that watches for verification mail and opens its links for you.
 - **Guided email setup.** Creating the Nth mailbox is a wizard: pick a provider
   that does not demand a phone number, generate a numbered address
   (`yourhandle001`, `yourhandle002`, ...), and let Pigeonhole fill the signup
@@ -92,17 +97,22 @@ That is it. There is no installer, no registration and no cloud service.
 
 ## What the wizard does
 
-1. **Choose a provider.** The wizard shows a comparison table every time -
+1. **Pick a path.** *Get an instant address* creates a working mailbox
+   automatically over the free mail.tm API (mail.gw fallback) and shows a
+   live inbox - no CAPTCHA, nothing to type. *Create a new email account*
+   walks a real provider signup with you. *Use an email I already have*
+   connects a mailbox you own.
+2. **Choose a provider.** The wizard shows a comparison table every time -
    providers that currently do not require a phone number come first
-   (Proton Mail, Tuta, Mailfence). Facts drift, so the table is honest about
-   what each provider asks for; full notes live in
-   [docs/email-providers.md](docs/email-providers.md).
-2. **Generate an identity.** By default a numbered address:
+   (Proton Mail, Atomic Mail, then Mailfence and Tuta with their caveats).
+   Facts drift, so the table is honest about what each provider asks for;
+   full notes live in [docs/email-providers.md](docs/email-providers.md).
+3. **Generate an identity.** By default a numbered address:
    your base handle plus an auto-incrementing number with adjustable
    zero-padding (`fox001@proton.me`, `fox002@proton.me`, ...). Human-name and
    word-pair styles are one click away. The password can be generated, typed,
    or taken from an optional shared password you configure once in Settings.
-3. **Create the account.** The signup page opens inside the workspace and
+4. **Create the account.** The signup page opens inside the workspace and
    Pigeonhole fills it - username, name, date of birth, gender, password,
    confirm, security answer, terms box. CAPTCHAs are never touched; that part
    stays yours. When the signup completes, the wizard notices (or you click

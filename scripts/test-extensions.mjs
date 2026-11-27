@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Extensions + per-workspace proxy E2E. Boots the real app (app/ over HTTP +
 // Electron + CDP) and drives the IPC surface directly:
-//   E1  extensions list -> four built-ins with the right defaults
+//   E1  extensions list -> five built-ins with the right defaults
 //   E2  toggling persists to the store and reflects in the list
 //   E3  Ad Shield config: level presets, per-site rules, reset
 //   E4  workspace proxy: sanitized IPC answers never leak the password;
@@ -77,7 +77,7 @@ async function main() {
   check('a workspace exists for the test', !!wsId, String(wsId));
   const list0 = await call(() => window.pigeonhole.extensions.list());
   const byId = Object.fromEntries(list0.map(x => [x.id, x]));
-  check('four built-ins ship', list0.length === 4, JSON.stringify(list0.map(x => x.id)));
+  check('five built-ins ship', list0.length === 5 && list0.some(x => x.id === 'gconsent'), JSON.stringify(list0.map(x => x.id)));
   check('spell check on by default', byId.spellcheck?.enabled === true);
   check('tracker shield on by default', byId.trackershield?.enabled === true);
   check('video speed on by default', byId.videospeed?.enabled === true);

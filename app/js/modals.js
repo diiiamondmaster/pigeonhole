@@ -124,8 +124,8 @@ export async function settingsModal(activeTab = 'general') {
           el('div', { class: 'seg' }, [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']].map(([k, l]) =>
             el('button', { class: st.tileSize === k ? 'on accent' : '', text: l, onclick: async () => { await PH().settings.set({ tileSize: k }); await S.refresh(); applyUiFromChrome(); settingsModal('appearance'); } }))))),
       section('Workspace switching',
-        toggleRow('Fading switch trail',
-          'Switching workspaces leaves a short fading glow on the tile you left, in that workspace\u2019s colour.',
+        toggleRow('Recency switch bars',
+          'The active tile carries a full bar on its right edge in its colour; tiles you switch away from fade one step per later switch. Drag tiles (or right-click \u2192 Move up/down) to reorder - numbers follow the order.',
           st.wsAnim !== false, async (v) => { await PH().settings.set({ wsAnim: v }); await S.refresh(); }),
         el('p', { style: { fontSize: '11.5px', color: 'var(--text-faint)', lineHeight: '1.55' }, text: 'The active workspace is also called out three more ways, always on: the hue line under the top bar, the highlighted tile, and the status bar text.' }))),
 
