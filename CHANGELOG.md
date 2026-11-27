@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.1.0-beta.6 - 2026-11-27 (beta channel)
+
+Fixes for the beta feedback that piled up: the disposable-email experiment is
+gone (real providers only, Atomic Mail by default), fullscreen actually
+works, the bottom of the window sits where it should, the reload button
+reloads the page you wanted, workspace trails shrink as well as fade, and
+mail backup files now file themselves.
+
+- **Instant addresses removed.** The mail.tm / mail.gw disposable-mailbox
+  system is gone entirely (client, IPC, wizard flow, store records). Its
+  domains are on the disposable-address blocklists the big sites use, so
+  accounts built on them got refused exactly when it mattered - a
+  disposable mailbox defeats the point of having one. The wizard is back to
+  real providers only, with **Atomic Mail preselected** as the default:
+  no phone, nothing personal, seed-phrase recovery, tolerant of shared
+  exits. (The provider registry keeps Proton, Mailfence and Tuta; the
+  disposable record on existing workspaces is dropped on load and the
+  identity email/password you saved stay.)
+- **Fullscreen fixed.** A page going fullscreen (video, slides, games) used
+  to stay boxed inside the content area - Chromium only sizes the guest to
+  the webview element, and the chrome-hiding rules for the page-fullscreen
+  state never existed. They do now: entering page fullscreen steps the whole
+  chrome aside and the page takes the entire window; leaving restores the
+  exact layout. F11 / the toolbar button / the View menu all still toggle
+  window fullscreen.
+- **The window bottom is flush again.** With Settings -> Appearance set to
+  Compact or Large, the chrome is CSS-zoomed 90%/110% - but `100vh` does not
+  scale with zoom, so the statusbar floated 10% above the window bottom (or
+  was clipped off-screen). The app height is now compensated for the zoom
+  factor, and appearance changes apply live (the settings IPC now notifies
+  the chrome).
+- **The reload button works after an error.** A failed load parks the tab on
+  the internal error page, and the reload button was reloading that error
+  page - endlessly. It now parses the failed URL back out of the error page
+  and reloads the page you actually wanted.
+- **Recency trails, Opera-GX style.** The bar on each workspace tile still
+  marks where you have been, but now it SHRINKS as well as fades: the
+  workspace you used last carries a tall bright bar in its hue, and every
+  workspace you switch through after that makes it one step shorter and more
+  transparent until it disappears.
+- **Mail backup files, captured per workspace.** No-phone providers hand out
+  backup and recovery files (Tuta's export container, key/seed exports).
+  Pigeonhole now recognizes a backup-looking download in a workspace with a
+  mail identity, keeps it out of the Downloads folder, and stores it with
+  that workspace (workspace settings -> *Mail backup files*, with show-in-
+  folder and a manual rescan). On boot the Downloads folder is swept for
+  legacy backups: files whose name ties them to exactly one current
+  workspace identity are imported (marked "from Downloads"); anything that
+  matches nothing - or several - is left untouched. Deleting a workspace
+  removes its backups with it.
+- **Bug fixes found along the way:** settings changes now apply immediately
+  instead of silently waiting for a restart (settings IPC sends state
+  changes); externally created workspaces render their sidebar tile right
+  away; the wizard's provider step preselects cleanly.
+- E2E: new `scripts/test-beta6.mjs` (42 checks) covering the Atomic default,
+  the removal, the reload-after-error retry (flaky server), window-bottom
+  geometry at every zoom, the trail shrink/fade ladders, both fullscreen
+  modes, live backup capture (by provider host and by address), the legacy
+  Downloads sweep with left-behind files, backup lifecycle, renumber/
+  reorder/drag, gconsent and the guided-flow regression. The beta.5 suite
+  (built around the removed instant flow) is retired; all other suites pass
+  unchanged: pool 27+21, UI 43, v1.0.5 20, updater 17.
+
 ## 1.1.0-beta.5 - 2026-11-27 (beta channel)
 
 Email that just works, workspaces that stay tidy, and Google that stops

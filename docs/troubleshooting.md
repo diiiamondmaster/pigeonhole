@@ -64,6 +64,17 @@ drivers Chromium falls back to software rendering automatically. If pages
 stay blank, start the app once with `Pigeonhole.exe --disable-gpu` to force
 the fallback.
 
+## My mail backup file did not land in the Downloads folder
+
+That is the intended behaviour: downloads that look like mail backups
+(Tuta containers, key/backup/restore/recovery exports) from a workspace
+with a mailbox identity are stored with that workspace instead - see
+workspace settings -> *Mail backup files*, where you can also open the
+folder or rescan Downloads for older files. A file is only claimed when
+its name ties it to a workspace (the mailbox address, or a
+provider-specific extension with a single matching provider); anything
+else stays in Downloads untouched.
+
 ## Pages are slow or a workspace keeps rotating exits
 
 Auto (free pool) exits are community proxies, and their quality varies by

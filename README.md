@@ -48,16 +48,20 @@ adds on top:
 - **Appearance settings (beta line).** Interface scale and workspace tile
   size are adjustable in Settings → Appearance; the active workspace is
   called out with a hue line under the top bar, and each tile carries a
-  recency bar that fades the further back in your switching history it is.
-- **Instant email addresses (beta line).** The wizard's first option: a real,
-  working mailbox over the free mail.tm service, created with one API call -
-  no CAPTCHA, no forms, nothing personal - with a live inbox right in the
-  wizard that watches for verification mail and opens its links for you.
-- **Guided email setup.** Creating the Nth mailbox is a wizard: pick a provider
-  that does not demand a phone number, generate a numbered address
-  (`yourhandle001`, `yourhandle002`, ...), and let Pigeonhole fill the signup
-  form. You solve the CAPTCHA and press Create - the account is born inside
-  the very workspace it will live in.
+  recency trail - a bar that shrinks and fades the further back in your
+  switching history it is.
+- **Guided email setup, Atomic Mail by default.** Creating the Nth mailbox is
+  a wizard: Atomic Mail is preselected (no phone, nothing personal, works
+  well from shared exits), or pick another no-phone provider, generate a
+  numbered address (`yourhandle001`, `yourhandle002`, ...), and let
+  Pigeonhole fill the signup form. You solve the CAPTCHA and press Create -
+  the account is born inside the very workspace it will live in.
+- **Mail backups, captured per workspace (beta line).** No-phone providers
+  hand out backup and recovery files (Tuta's container, key exports).
+  Pigeonhole recognizes those downloads, keeps them out of your Downloads
+  folder and stores them with the workspace that owns the mailbox - and can
+  sweep the Downloads folder for old ones, importing only files that match a
+  current workspace's address.
 - **One identity per workspace.** After setup, Pigeonhole detects login and
   signup forms and offers to fill them with the workspace's email and
   password. Site logins can be saved to a per-workspace vault, encrypted with
@@ -97,14 +101,12 @@ That is it. There is no installer, no registration and no cloud service.
 
 ## What the wizard does
 
-1. **Pick a path.** *Get an instant address* creates a working mailbox
-   automatically over the free mail.tm API (mail.gw fallback) and shows a
-   live inbox - no CAPTCHA, nothing to type. *Create a new email account*
-   walks a real provider signup with you. *Use an email I already have*
+1. **Pick a path.** *Create a new email account* walks a real provider
+   signup with you (Atomic Mail preselected). *Use an email I already have*
    connects a mailbox you own.
 2. **Choose a provider.** The wizard shows a comparison table every time -
    providers that currently do not require a phone number come first
-   (Proton Mail, Atomic Mail, then Mailfence and Tuta with their caveats).
+   (Atomic Mail, Proton Mail, then Mailfence and Tuta with their caveats).
    Facts drift, so the table is honest about what each provider asks for;
    full notes live in [docs/email-providers.md](docs/email-providers.md).
 3. **Generate an identity.** By default a numbered address:
