@@ -11,11 +11,17 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     duplicate: (wsId) => invoke('ph:ws-duplicate', wsId),
     remove: (wsId) => invoke('ph:ws-remove', wsId),
     rename: (wsId, name) => invoke('ph:ws-rename', wsId, name),
+    reorder: (ids) => invoke('ph:ws-reorder', ids),
     setHue: (wsId, hue) => invoke('ph:ws-set-hue', wsId, hue),
     setProxy: (wsId, cfg) => invoke('ph:ws-set-proxy', wsId, cfg),
     setProxyMode: (wsId, mode, region) => invoke('ph:ws-proxy-mode', wsId, mode, region),
     testProxy: (wsId, url) => invoke('ph:ws-test-proxy', wsId, url),
     clearData: (wsId) => invoke('ph:ws-clear-data', wsId)
+  },
+  temp: {
+    create: (wsId, local, password) => invoke('ph:temp-create', wsId, local, password),
+    inbox: (wsId) => invoke('ph:temp-inbox', wsId),
+    message: (wsId, msgId) => invoke('ph:temp-message', wsId, msgId)
   },
   pool: {
     status: () => invoke('ph:pool-status'),
@@ -61,6 +67,7 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     cancelDownload: (id) => invoke('ph:dl-cancel', id),
     showItem: (p) => invoke('ph:show-item', p),
     openDevTools: () => invoke('ph:open-devtools'),
+    fullscreen: () => invoke('ph:app-fullscreen'),
     pickDownloadsDir: () => invoke('ph:pick-downloads-dir')
   },
   onEvent: (cb) => {

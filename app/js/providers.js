@@ -1,7 +1,18 @@
 // Email provider registry used by the onboarding wizard.
-// The "phone" field reflects the provider's current signup behaviour -
-// researched November 2026 (see docs/email-providers.md for sources).
+// The "phone" field reflects the provider's current signup behaviour,
+// re-researched November 2026 (see docs/email-providers.md for sources).
 // Facts drift, so the wizard always shows this table for the user to judge.
+//
+// v1.1.0-beta.5 notes, after beta user feedback:
+// - mail.com and GMX removed: both now gate signup behind a phone number,
+//   and signups from proxy IPs are routinely refused outright.
+// - Tuta demoted: signups made through VPN/proxy exits are held for an
+//   approval queue ("up to 48 hours", frequently longer) and unused free
+//   accounts are deleted. Great provider, poor fit while exiting through
+//   the free proxy pool.
+// - Atomic Mail added: no phone, no recovery email, seed-phrase recovery.
+// - the "instant address" mode (mail.tm / mail.gw API) lives in the wizard
+//   itself, not in this list - it is automatic and needs no CAPTCHA at all.
 
 export const PHONE_LABEL = {
   none: { label: 'No phone required', cls: 'success' },
@@ -19,10 +30,38 @@ export const PROVIDERS = [
     phone: 'none',
     humanCheck: 'CAPTCHA or alternate email',
     free: '1 address, up to 1 GB, 150 messages/day',
-    notes: 'Swiss privacy provider, running since 2014. Pick the Free plan on the first screen. Account recovery details are optional.',
+    notes: 'Swiss privacy provider, running since 2014. Pick the Free plan on the first screen; recovery details are optional - skip them to keep accounts unlinked.',
     domains: ['proton.me', 'protonmail.com'],
     successPatterns: [/account\.proton\.me\/u\/\d+/i, /mail\.proton\.me/i, /account\.proton\.me\/(mail|download|dashboard)/i],
     recommended: true
+  },
+  {
+    id: 'atomic',
+    name: 'Atomic Mail',
+    signupUrl: 'https://atomicmail.io/app/auth/sign-up',
+    inboxUrl: 'https://atomicmail.io/app',
+    host: 'atomicmail.io',
+    phone: 'none',
+    humanCheck: 'picture puzzle (sometimes)',
+    free: 'Unlimited storage, 10 aliases, 25 MB attachments',
+    notes: 'Encrypted provider that asks for nothing personal: a first name, the address and a password. You get a 12-word seed phrase - save it, it is the ONLY recovery method. Works well from shared IPs.',
+    domains: ['atomicmail.io'],
+    successPatterns: [/atomicmail\.io\/app(?!\/auth)/i, /atomicmail\.io\/app\/#/i],
+    recommended: true
+  },
+  {
+    id: 'mailfence',
+    name: 'Mailfence',
+    signupUrl: 'https://mailfence.com/registration',
+    inboxUrl: 'https://mailfence.com',
+    host: 'mailfence.com',
+    phone: 'none',
+    humanCheck: 'CAPTCHA (recovery email optional)',
+    free: 'Free base plan, OpenPGP',
+    notes: 'Belgian secure mail since 2013. No phone, but it tightens up when the signup comes from a shared/proxy IP - if the form refuses you, turn this workspace\'s proxy off for the signup, or use an instant address instead.',
+    domains: ['mailfence.com'],
+    successPatterns: [/mailfence\.com\/(inbox|mail|start)/i],
+    recommended: false
   },
   {
     id: 'tuta',
@@ -33,37 +72,9 @@ export const PROVIDERS = [
     phone: 'none',
     humanCheck: 'CAPTCHA',
     free: '1 GB storage, 1 calendar',
-    notes: 'German privacy provider (formerly Tutanota), since 2011. The signup first shows a plan picker - pick Free and continue, the address form comes next. Signups from some networks are held for a short activation check.',
+    notes: 'German privacy provider (formerly Tutanota). Heads-up: signups made through VPN/proxy exits are put in an approval queue that can take 48 hours or more, and free accounts that sit unused get deleted. Prefer it on a direct connection, or pick another provider while routed through the pool.',
     domains: ['tuta.com', 'tutanota.com', 'tuta.io', 'tutamail.com', 'tutanota.de', 'keemail.me'],
     successPatterns: [/app\.tuta\.com\/(mail|wizard|login)/i, /app\.tuta\.com\/[a-z]{2}\/mail/i],
-    recommended: true
-  },
-  {
-    id: 'mailfence',
-    name: 'Mailfence',
-    signupUrl: 'https://mailfence.com/registration',
-    inboxUrl: 'https://mailfence.com',
-    host: 'mailfence.com',
-    phone: 'none',
-    humanCheck: 'none (recovery email optional)',
-    free: 'Free base plan, OpenPGP',
-    notes: 'Belgian secure mail since 2013. Pick a display name and login; a recovery email is recommended but optional.',
-    domains: ['mailfence.com'],
-    successPatterns: [/mailfence\.com\/(inbox|mail|start)/i],
-    recommended: true
-  },
-  {
-    id: 'mailcom',
-    name: 'mail.com',
-    signupUrl: 'https://www.mail.com/mail/create-email-account/',
-    inboxUrl: 'https://www.mail.com',
-    host: 'www.mail.com',
-    phone: 'asked',
-    humanCheck: 'CAPTCHA',
-    free: '100+ domains to pick from',
-    notes: 'The signup form asks for a cell number and recent user reports say it may be mandatory. Included for completeness - prefer a no-phone provider above.',
-    domains: ['mail.com', 'usa.com', 'engineer.com', 'consultant.com'],
-    successPatterns: [/mail\.com\/(success|welcome|mail)/i, /navigator\./i],
     recommended: false
   }
 ];

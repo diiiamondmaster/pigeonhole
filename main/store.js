@@ -30,7 +30,8 @@ const DEFAULT_SETTINGS = {
     spellcheck: true,
     trackershield: true,
     videospeed: true,
-    adshield: true
+    adshield: true,
+    gconsent: true
   },
   adshield: {                   // Ad Shield: blocking level + per-site overrides
     level: 'standard',           // basic | standard | strict
@@ -50,7 +51,7 @@ function defaultState() {
     settings: { ...DEFAULT_SETTINGS },
     ui: { sidebarCollapsed: false, activeWsId: null },
     nextWsNum: 1,
-    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,createdAt}
+    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,proxy,disposable,createdAt}
     tabs: {},                   // wsId -> [{id,url,title,active,favicon}]
     history: {}                 // wsId -> [{url,title,at}]
   };
@@ -87,7 +88,7 @@ class Store {
           if (!this.state.history) this.state.history = {};
           // normalize entries so one malformed record cannot brick boot
           this.state.workspaces = this.state.workspaces.filter(w => w && typeof w === 'object' && typeof w.id === 'string')
-            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [], proxy: w.proxy && typeof w.proxy === 'object' ? w.proxy : null }));
+            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [], proxy: w.proxy && typeof w.proxy === 'object' ? w.proxy : null, disposable: w.disposable && typeof w.disposable === 'object' ? w.disposable : null }));
           for (const w of this.state.workspaces) {
             if (!Array.isArray(this.state.tabs[w.id])) this.state.tabs[w.id] = [];
             if (!Array.isArray(this.state.history[w.id])) this.state.history[w.id] = [];
@@ -232,8 +233,50 @@ class Store {
     if (this.state.ui.activeWsId === id) {
       this.state.ui.activeWsId = this.state.workspaces[0]?.id || null;
     }
+    this._renumber();   // no gaps: remaining workspaces compact to 1..N
     this.save();
     return true;
+  }
+
+  // Reassign workspace numbers to the current array order (1..N) and park
+  // the creation counter right after. Used after delete AND reorder so the
+  // sidebar never shows stale numbering.
+  _renumber() {
+    this.state.workspaces.forEach((w, i) => { w.num = i + 1; });
+    this.state.nextWsNum = this.state.workspaces.length + 1;
+  }
+
+  // Reorder by explicit id list. The list must be a permutation of exactly
+  // the current workspace ids; anything else is rejected untouched.
+  reorderWorkspaces(ids) {
+    if (!Array.isArray(ids) || ids.length !== this.state.workspaces.length) return false;
+    const byId = new Map(this.state.workspaces.map(w => [w.id, w]));
+    if (ids.some(id => !byId.has(String(id)))) return false;
+    this.state.workspaces = ids.map(id => byId.get(String(id)));
+    this._renumber();
+    this.save();
+    return true;
+  }
+
+  // ---------- disposable instant mailbox (mail.tm / mail.gw) ----------
+  // The address/password pair is the only thing needed to re-authenticate
+  // against the API later, so that is all we keep (password encrypted).
+  setDisposable(wsId, { address, password, accountId, api, createdAt }) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return null;
+    ws.disposable = {
+      address: String(address || '').trim().slice(0, 200),
+      password: this.encryptSecret(password),
+      accountId: String(accountId || '').slice(0, 64),
+      api: String(api || 'mail.tm').slice(0, 40),
+      createdAt: Number.isFinite(Number(createdAt)) ? Number(createdAt) : Date.now()
+    };
+    this.save();
+    return this.sanitizeDisposable(ws.disposable);
+  }
+  sanitizeDisposable(d) {
+    if (!d) return null;
+    return { address: d.address, accountId: d.accountId, api: d.api, createdAt: d.createdAt, hasPassword: !!d.password };
   }
 
   // ---------- vault ----------
@@ -385,6 +428,7 @@ class Store {
       workspaces: this.state.workspaces.map(w => ({
         id: w.id, num: w.num, name: w.name, hue: w.hue,
         identity: this.sanitizeIdentity(w.identity),
+        disposable: this.sanitizeDisposable(w.disposable),
         accountCount: w.accounts.length,
         quickLinks: w.quickLinks || [],
         proxy: this.sanitizeProxy(w.proxy),

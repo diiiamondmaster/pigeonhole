@@ -5,10 +5,12 @@
 const { ipcMain, dialog, shell, app, session, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { cancelDownload } = require('./downloads');
 const extensions = require('./extensions');
 const { applyWorkspaceProxy } = require('./proxy');
 const pool = require('./proxypool');
+const disposable = require('./disposable');
 
 const WS_ID = /^[a-zA-Z0-9-]{1,40}$/;
 
@@ -100,6 +102,45 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     ws.name = str(name, 80) || ws.name;
     store.save();
     return ws.name;
+  });
+
+  // reorder: a full permutation of workspace ids; numbers recompute to 1..N
+  ipcMain.handle('ph:ws-reorder', (_e, ids) => {
+    if (!Array.isArray(ids) || ids.length > 200 || !ids.every(i => WS_ID.test(String(i || '')))) throw bad('bad id list');
+    const ok = store.reorderWorkspaces(ids.map(String));
+    if (!ok) throw bad('bad order');   // not a permutation of the current set
+    send('state-changed', { reason: 'ws-reorder' });
+    return true;
+  });
+
+  // ---------- disposable instant mailboxes (mail.tm / mail.gw) ----------
+  // local: desired local part (falls back to a random one), password: optional
+  ipcMain.handle('ph:temp-create', async (_e, wsId, local, password) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    if (!store.getWorkspace(wsId)) throw bad('no such workspace');
+    const clean = String(local || '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
+    const mine = await disposable.createAddress({
+      local: clean || ('ph' + crypto.randomBytes(5).toString('hex')),
+      password: typeof password === 'string' && password.length >= 8 ? password.slice(0, 128) : null
+    }).catch((e) => { throw new Error(String(e.message || e).slice(0, 200)); });
+    const rec = store.setDisposable(wsId, {
+      address: mine.address, password: mine.password, accountId: mine.accountId, api: mine.api, createdAt: Date.now()
+    });
+    send('state-changed', { reason: 'ws-disposable', wsId });
+    return rec;
+  });
+
+  ipcMain.handle('ph:temp-inbox', async (_e, wsId) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    try { return { ok: true, ...(await disposable.inbox(store, wsId)) }; }
+    catch (e) { return { ok: false, error: String(e.message || e).slice(0, 200) }; }
+  });
+
+  ipcMain.handle('ph:temp-message', async (_e, wsId, msgId) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    if (!/^[a-zA-Z0-9]{1,64}$/.test(String(msgId || ''))) throw bad('bad message id');
+    try { return { ok: true, ...(await disposable.message(store, wsId, String(msgId))) }; }
+    catch (e) { return { ok: false, error: String(e.message || e).slice(0, 200) }; }
   });
 
   ipcMain.handle('ph:ws-set-hue', (_e, wsId, hue) => {
@@ -402,6 +443,15 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
   ipcMain.handle('ph:update-install', (_e, mode) => updater.install(mode === 'restart' ? 'restart' : 'quit'));
 
   // ---------- ui / misc ----------
+  ipcMain.handle('ph:app-fullscreen', () => {
+    const w = getWindow();
+    if (w && !w.isDestroyed()) {
+      w.setFullScreen(!w.isFullScreen());
+      return w.isFullScreen();
+    }
+    return false;
+  });
+
   ipcMain.handle('ph:ui-set', (_e, patch) => {
     if (patch && typeof patch === 'object') store.setUi({ sidebarCollapsed: !!patch.sidebarCollapsed, activeWsId: WS_ID.test(patch.activeWsId || '') ? patch.activeWsId : store.state.ui.activeWsId });
     return true;
