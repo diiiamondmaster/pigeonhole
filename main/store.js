@@ -51,7 +51,7 @@ function defaultState() {
     settings: { ...DEFAULT_SETTINGS },
     ui: { sidebarCollapsed: false, activeWsId: null },
     nextWsNum: 1,
-    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,proxy,disposable,createdAt}
+    workspaces: [],             // {id,num,name,hue,identity,accounts,quickLinks,proxy,backups,createdAt}
     tabs: {},                   // wsId -> [{id,url,title,active,favicon}]
     history: {}                 // wsId -> [{url,title,at}]
   };
@@ -88,7 +88,7 @@ class Store {
           if (!this.state.history) this.state.history = {};
           // normalize entries so one malformed record cannot brick boot
           this.state.workspaces = this.state.workspaces.filter(w => w && typeof w === 'object' && typeof w.id === 'string')
-            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [], proxy: w.proxy && typeof w.proxy === 'object' ? w.proxy : null, disposable: w.disposable && typeof w.disposable === 'object' ? w.disposable : null }));
+            .map(w => ({ ...w, accounts: Array.isArray(w.accounts) ? w.accounts : [], quickLinks: Array.isArray(w.quickLinks) ? w.quickLinks : [], proxy: w.proxy && typeof w.proxy === 'object' ? w.proxy : null, backups: Array.isArray(w.backups) ? w.backups : [], disposable: undefined }));
           for (const w of this.state.workspaces) {
             if (!Array.isArray(this.state.tabs[w.id])) this.state.tabs[w.id] = [];
             if (!Array.isArray(this.state.history[w.id])) this.state.history[w.id] = [];
@@ -258,27 +258,6 @@ class Store {
     return true;
   }
 
-  // ---------- disposable instant mailbox (mail.tm / mail.gw) ----------
-  // The address/password pair is the only thing needed to re-authenticate
-  // against the API later, so that is all we keep (password encrypted).
-  setDisposable(wsId, { address, password, accountId, api, createdAt }) {
-    const ws = this.getWorkspace(wsId);
-    if (!ws) return null;
-    ws.disposable = {
-      address: String(address || '').trim().slice(0, 200),
-      password: this.encryptSecret(password),
-      accountId: String(accountId || '').slice(0, 64),
-      api: String(api || 'mail.tm').slice(0, 40),
-      createdAt: Number.isFinite(Number(createdAt)) ? Number(createdAt) : Date.now()
-    };
-    this.save();
-    return this.sanitizeDisposable(ws.disposable);
-  }
-  sanitizeDisposable(d) {
-    if (!d) return null;
-    return { address: d.address, accountId: d.accountId, api: d.api, createdAt: d.createdAt, hasPassword: !!d.password };
-  }
-
   // ---------- vault ----------
   setIdentity(wsId, { email, password, displayName = '', provider = '' }) {
     const ws = this.getWorkspace(wsId);
@@ -428,7 +407,11 @@ class Store {
       workspaces: this.state.workspaces.map(w => ({
         id: w.id, num: w.num, name: w.name, hue: w.hue,
         identity: this.sanitizeIdentity(w.identity),
-        disposable: this.sanitizeDisposable(w.disposable),
+        backups: (w.backups || []).map(b => ({
+          name: String(b.name || '').slice(0, 200), bytes: Number(b.bytes) || 0,
+          capturedAt: Number(b.capturedAt) || 0, source: b.source === 'legacy' ? 'legacy' : 'download',
+          provider: String(b.provider || '').slice(0, 60)
+        })),
         accountCount: w.accounts.length,
         quickLinks: w.quickLinks || [],
         proxy: this.sanitizeProxy(w.proxy),

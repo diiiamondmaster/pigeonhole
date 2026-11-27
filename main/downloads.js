@@ -31,7 +31,11 @@ function uniquePath(dir, name) {
 function attachDownloadHandlers(ses) {
   if (ses.__phDownloads) return;
   ses.__phDownloads = true;
-  ses.on('will-download', (_event, item) => {
+  ses.on('will-download', (_event, item, webContents) => {
+    // mail backup capture FIRST: a backup-looking download from a workspace
+    // with a mail identity never lands in the Downloads folder at all
+    const { capture } = require('./backups');
+    if (capture(item, webContents)) return;
     // registry lives in main; circular import avoided by lazy require
     const { store } = require('./store');
     const dir = store.state.settings.downloadsDir || app.getPath('downloads');

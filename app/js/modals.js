@@ -443,6 +443,47 @@ export async function wsSettingsModal(wsId, opts = {}) {
     proxyFields.querySelectorAll('input, button, select').forEach(x => { x.disabled = mode === 'custom'; });
   }
 
+  // ---------- mail backup files captured for this workspace ----------
+  const fmtBytes = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b >= 1024 ? Math.round(b / 1024) + ' KB' : b + ' B');
+  const backupsSection = section('Mail backup files',
+    el('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginBottom: '10px' }, text: 'Backup and recovery files your mail provider hands out are kept here instead of cluttering the Downloads folder - tied to this workspace, ready if the account ever needs restoring. Files from the Downloads folder that match this workspace are imported automatically.' }),
+    ...(() => {
+      const list = (w.backups || []);
+      if (!list.length) {
+        return [el('div', { class: 'hint', text: 'No backup files yet. When ' + (w.identity ? w.identity.email : 'this workspace\u2019s mailbox') + ' exports one, it lands here automatically.' })];
+      }
+      return list.map(b => el('div', {
+        class: 'row', style: { flexWrap: 'nowrap', gap: '8px', padding: '7px 9px', marginBottom: '6px', background: 'var(--surface-2)', borderRadius: '7px', alignItems: 'center' }
+      },
+        el('span', { style: { flex: '1', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px' }, title: b.name, text: b.name }),
+        el('span', { class: 'pill muted', text: fmtBytes(b.bytes) }),
+        b.provider ? el('span', { class: 'pill muted', text: b.provider }) : null,
+        el('span', { class: 'pill muted', title: b.capturedAt ? new Date(b.capturedAt).toLocaleString() : '', text: b.source === 'legacy' ? 'from Downloads' : fmtDate(b.capturedAt) }),
+        el('button', {
+          class: 'btn btn-sm', text: 'Show in folder',
+          onclick: async () => {
+            try { await PH().backups.open(w.id, b.name); }
+            catch (e) { toast({ title: 'Backup file not found', sub: String(e.message || e).slice(0, 80), type: 'error', ic: 'warn' }); }
+          }
+        })
+      ));
+    })(),
+    el('div', { class: 'row', style: { marginTop: '4px', flexWrap: 'wrap', gap: '8px' } },
+      el('button', {
+        class: 'btn btn-sm', text: 'Scan Downloads for more',
+        title: 'Looks through the Downloads folder for backup files matching this workspace (and others)',
+        onclick: async () => {
+          toast({ title: 'Scanning the Downloads folder…', type: 'info', ic: 'clock', timeout: 2200 });
+          try {
+            const r = await PH().backups.rescan();
+            await S.refresh();
+            wsSettingsModal(wsId);
+            toast({ title: r.imported ? `Imported ${r.imported} backup file${r.imported === 1 ? '' : 's'}` : 'Nothing new found', sub: r.imported ? `Moved into the matching workspaces - ignored ${r.ignored} unrelated file${r.ignored === 1 ? '' : 's'}.` : `${r.ignored} unrelated file${r.ignored === 1 ? '' : 's'} left alone.`, type: r.imported ? 'success' : 'info', ic: 'check', timeout: 5000 });
+          } catch (e) { toast({ title: 'Scan failed', sub: String(e.message || e).slice(0, 80), type: 'error', ic: 'warn' }); }
+        }
+      }),
+      el('span', { class: 'hint', style: { margin: '0', fontSize: '11px' }, text: 'A backup file is only claimed when its name ties it to a workspace mailbox.' })));
+
   openModal({
     title: `Workspace ${w.num} settings`, size: '',
     body: el('div', {},
@@ -450,6 +491,7 @@ export async function wsSettingsModal(wsId, opts = {}) {
         `Shown in the sidebar tooltip and the top bar. Default: “Workspace ${w.num}”${w.identity ? ` - currently named after ${w.identity.email}` : ''}.`),
       section('Tile colour', colorDots),
       netSection,
+      backupsSection,
       section('Danger zone',
         el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px' } },
           el('button', {

@@ -18,11 +18,6 @@ contextBridge.exposeInMainWorld('pigeonhole', {
     testProxy: (wsId, url) => invoke('ph:ws-test-proxy', wsId, url),
     clearData: (wsId) => invoke('ph:ws-clear-data', wsId)
   },
-  temp: {
-    create: (wsId, local, password) => invoke('ph:temp-create', wsId, local, password),
-    inbox: (wsId) => invoke('ph:temp-inbox', wsId),
-    message: (wsId, msgId) => invoke('ph:temp-message', wsId, msgId)
-  },
   pool: {
     status: () => invoke('ph:pool-status'),
     refresh: () => invoke('ph:pool-refresh'),
@@ -34,6 +29,10 @@ contextBridge.exposeInMainWorld('pigeonhole', {
   },
   tabs: { save: (wsId, tabs) => invoke('ph:tabs-save', wsId, tabs) },
   history: { add: (wsId, entry) => invoke('ph:history-add', wsId, entry) },
+  backups: {
+    open: (wsId, name) => invoke('ph:ws-open-backup', wsId, name),
+    rescan: () => invoke('ph:backups-rescan')
+  },
   settings: {
     set: (patch) => invoke('ph:settings-set', patch),
     setSharedPassword: (pw) => invoke('ph:settings-set-shared-password', pw)

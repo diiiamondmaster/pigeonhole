@@ -10,7 +10,7 @@ const { cancelDownload } = require('./downloads');
 const extensions = require('./extensions');
 const { applyWorkspaceProxy } = require('./proxy');
 const pool = require('./proxypool');
-const disposable = require('./disposable');
+const backups = require('./backups');
 
 const WS_ID = /^[a-zA-Z0-9-]{1,40}$/;
 
@@ -60,6 +60,7 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (store.state.settings.poolAutoNewWorkspaces) {
       queueAutoAssign(ws.id);
     }
+    send('state-changed', { reason: 'ws-create', wsId: ws.id });
     return { id: ws.id, num: ws.num, name: ws.name, hue: ws.hue };
   });
 
@@ -80,6 +81,7 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     const ws = store.getWorkspace(wsId);
     if (!ws) return false;
     store.deleteWorkspace(wsId);
+    backups.removeFor(wsId);   // captured backup files die with their workspace
     send('state-changed', { reason: 'ws-removed', wsId });
     // wipe the partition data on disk (best effort)
     try {
@@ -113,36 +115,6 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     return true;
   });
 
-  // ---------- disposable instant mailboxes (mail.tm / mail.gw) ----------
-  // local: desired local part (falls back to a random one), password: optional
-  ipcMain.handle('ph:temp-create', async (_e, wsId, local, password) => {
-    if (!WS_ID.test(wsId || '')) throw bad('bad id');
-    if (!store.getWorkspace(wsId)) throw bad('no such workspace');
-    const clean = String(local || '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
-    const mine = await disposable.createAddress({
-      local: clean || ('ph' + crypto.randomBytes(5).toString('hex')),
-      password: typeof password === 'string' && password.length >= 8 ? password.slice(0, 128) : null
-    }).catch((e) => { throw new Error(String(e.message || e).slice(0, 200)); });
-    const rec = store.setDisposable(wsId, {
-      address: mine.address, password: mine.password, accountId: mine.accountId, api: mine.api, createdAt: Date.now()
-    });
-    send('state-changed', { reason: 'ws-disposable', wsId });
-    return rec;
-  });
-
-  ipcMain.handle('ph:temp-inbox', async (_e, wsId) => {
-    if (!WS_ID.test(wsId || '')) throw bad('bad id');
-    try { return { ok: true, ...(await disposable.inbox(store, wsId)) }; }
-    catch (e) { return { ok: false, error: String(e.message || e).slice(0, 200) }; }
-  });
-
-  ipcMain.handle('ph:temp-message', async (_e, wsId, msgId) => {
-    if (!WS_ID.test(wsId || '')) throw bad('bad id');
-    if (!/^[a-zA-Z0-9]{1,64}$/.test(String(msgId || ''))) throw bad('bad message id');
-    try { return { ok: true, ...(await disposable.message(store, wsId, String(msgId))) }; }
-    catch (e) { return { ok: false, error: String(e.message || e).slice(0, 200) }; }
-  });
-
   ipcMain.handle('ph:ws-set-hue', (_e, wsId, hue) => {
     if (!WS_ID.test(wsId || '')) throw bad('bad id');
     const ws = store.getWorkspace(wsId);
@@ -160,6 +132,15 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
       return true;
     } catch { return false; }
   });
+
+  // ---------- mail backups ----------
+  ipcMain.handle('ph:ws-open-backup', (_e, wsId, name) => {
+    if (!WS_ID.test(wsId || '')) throw bad('bad id');
+    const ok = backups.openInFolder(wsId, str(name, 200));
+    if (!ok) throw bad('no such backup file');
+    return true;
+  });
+  ipcMain.handle('ph:backups-rescan', () => backups.scanLegacy({ quiet: false }));
 
   // ---------- per-workspace proxy ----------
   ipcMain.handle('ph:ws-set-proxy', async (_e, wsId, cfg) => {
@@ -351,7 +332,9 @@ function registerIpc(getWindow, sessionForPartition, store, updater) {
     if (patch.wsAnim != null) out.wsAnim = !!patch.wsAnim;
     if (typeof patch.adshieldLevel === 'string') out.adshieldLevel = ['basic', 'standard', 'strict'].includes(patch.adshieldLevel) ? patch.adshieldLevel : 'standard';
     if (patch.poolAutoNewWorkspaces != null) out.poolAutoNewWorkspaces = !!patch.poolAutoNewWorkspaces;
-    return store.setSettings(out);
+    const saved = store.setSettings(out);
+    send('state-changed', { reason: 'settings' });
+    return saved;
   });
 
   ipcMain.handle('ph:settings-set-shared-password', (_e, pw) => {

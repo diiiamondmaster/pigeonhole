@@ -15,6 +15,7 @@ const { store } = require('./store');
 const { registerIpc } = require('./ipc');
 const { buildAppMenu, buildGuestMenu } = require('./menus');
 const { attachDownloadHandlers, initDownloads } = require('./downloads');
+const backups = require('./backups');
 const { registerProtocol, attachProtocolToSession } = require('./protocol');
 const { createUpdater } = require('./updater');
 const extensions = require('./extensions');
@@ -219,6 +220,10 @@ app.whenReady().then(async () => {
   registerProtocol(store);
   registerIpc(() => mainWindow, sessionForPartition, store, updater);
   initDownloads(() => mainWindow);
+  // mail backup capture + the boot-time legacy scan of the Downloads folder
+  backups.init((type, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ph-event', { type, payload });
+  }, store);
   if (!IS_DEV || process.env.PH_MENU !== '0') buildAppMenu(() => mainWindow);
 
   // make sure every existing workspace session gets download handling,
